@@ -1,19 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reading Group</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.2"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      view-transition-name: page;
+      transition: background 0.4s ease, color 0.4s ease;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      ::view-transition-old(body),
+      ::view-transition-new(body) {
+        animation: fade-page 0.4s ease-in-out both;
+      }
+      @keyframes fade-page {
+        from {
+          opacity: 0.92;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    }
+    nav a {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      padding: 0.35rem 1.25rem;
+    }
+    nav a:hover {
+      border-color: rgba(148, 163, 184, 0.6);
+    }
+  </style>
 </head>
 <body class="bg-slate-950 text-slate-100">
   <div class="min-h-screen px-4 py-8">
     <div class="mx-auto flex max-w-6xl flex-col gap-6">
-      <header class="space-y-1 text-center">
-        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Reading Group Coordinator</p>
-        <h1 class="text-3xl font-semibold text-white">Share, vote, and lock in the next paper</h1>
-        <p class="text-base text-slate-300">FastAPI + htmx keeps the experience simple and responsive.</p>
+      <header class="space-y-4 text-center">
+        <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Reading Group Coordinator</p>
+        <h1 class="text-4xl font-semibold text-white">Share, vote, and schedule the next paper</h1>
+        <p class="text-base text-slate-300">
+          FastAPI, htmx, and Tailwind combine for a responsive, multi-page experience with smooth CSS view transitions.
+        </p>
+        <nav aria-label="Primary" class="flex flex-wrap justify-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-400">
+          <a href="/" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">Schedule</a>
+          <a href="/vote" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">Vote</a>
+          <a href="/login" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">Account</a>
+          <a href="/about" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">About</a>
+        </nav>
       </header>
       <main class="flex-1">
         {% block content %}{% endblock %}
@@ -23,5 +64,35 @@
       </footer>
     </div>
   </div>
+  <script>
+    (function () {
+      if (!document.startViewTransition) {
+        return;
+      }
+      document.addEventListener("click", function (event) {
+        const anchor = event.target.closest("a[data-view-transition]");
+        if (!anchor) {
+          return;
+        }
+        if (anchor.target && anchor.target !== "") {
+          return;
+        }
+        if (anchor.hasAttribute("download")) {
+          return;
+        }
+        if (anchor.origin !== window.location.origin) {
+          return;
+        }
+        const href = anchor.href;
+        if (!href || href === window.location.href) {
+          return;
+        }
+        event.preventDefault();
+        document.startViewTransition(function () {
+          window.location.href = href;
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

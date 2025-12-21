@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-3 text-center">
+    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Account</p>
+    <h2 class="text-3xl font-semibold text-white">Sign in or create an account</h2>
+    <p class="text-sm text-slate-300">
+      Register to vote or log in to manage your session. Our scheduler keeps you informed about upcoming readings.
+    </p>
+  </section>
+  <section class="grid gap-6 lg:grid-cols-2">
+    {% if user %}
+      <article class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <p class="text-sm text-slate-300">Signed in as <span class="font-semibold text-white">{{ user.username }}</span></p>
+        <form method="post" action="/users/logout" class="mt-4">
+          <button type="submit" class="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:bg-slate-600">Log out</button>
+        </form>
+      </article>
+      <article class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl">
+        <p class="text-sm text-slate-300">Go back to the schedule to choose new dates.</p>
+        <a data-view-transition href="/" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-900 transition hover:bg-emerald-400">Return home</a>
+      </article>
+    {% else %}
+      <article class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <header class="mb-4">
+          <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Register</p>
+          <h3 class="text-lg font-semibold text-white">Create your account</h3>
+        </header>
+        <form method="post" action="/users/register" class="space-y-3">
+          <label class="text-sm text-slate-300">
+            <span class="mb-1 block font-semibold text-white">Username</span>
+            <input name="username" required autocomplete="username" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="e.g. reader01" />
+          </label>
+          <label class="text-sm text-slate-300">
+            <span class="mb-1 block font-semibold text-white">Password</span>
+            <input name="password" type="password" required autocomplete="new-password" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Create a password" />
+          </label>
+          <button type="submit" class="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-900 transition hover:bg-emerald-400">Create account</button>
+        </form>
+      </article>
+      <article class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl">
+        <header class="mb-4">
+          <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Log in</p>
+          <h3 class="text-lg font-semibold text-white">Access your votes</h3>
+        </header>
+        <form method="post" action="/users/login" class="space-y-3">
+          <label class="text-sm text-slate-300">
+            <span class="mb-1 block font-semibold text-white">Username</span>
+            <input name="username" required autocomplete="username" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Username" />
+          </label>
+          <label class="text-sm text-slate-300">
+            <span class="mb-1 block font-semibold text-white">Password</span>
+            <input name="password" type="password" required autocomplete="current-password" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Password" />
+          </label>
+          <button type="submit" class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Log in</button>
+        </form>
+      </article>
+    {% endif %}
+  </section>
+{% endblock %}

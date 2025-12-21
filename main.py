@@ -168,19 +168,24 @@ def _current_user(request: Request) -> sqlite3.Row | None:
 def _build_context(request: Request) -> dict:
     papers = _fetch_papers()
     selected = _selected_papers(papers)
+    backlog = sorted(
+        [paper for paper in papers if not paper["selected"]],
+        key=lambda paper: (-(paper["votes"] or 0), paper["title"]),
+    )
     user = _current_user(request)
     return {
         "request": request,
         "papers": papers,
         "selected_papers": selected,
+        "backlog_papers": backlog,
         "user": user,
     }
 
 
-def _hx_or_redirect(request: Request):
+def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = "/"):
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("partials/refresh.html", _build_context(request))
-    return RedirectResponse("/", status_code=303)
+        return templates.TemplateResponse(template_name, _build_context(request))
+    return RedirectResponse(redirect_path, status_code=303)
 
 
 def _hash_password(password: str) -> str:
@@ -214,6 +219,21 @@ def startup_event() -> None:
 @app.get("/", response_class=HTMLResponse)
 def homepage(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", _build_context(request))
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("login.html", _build_context(request))
+
+
+@app.get("/vote", response_class=HTMLResponse)
+def vote_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("vote.html", _build_context(request))
+
+
+@app.get("/about", response_class=HTMLResponse)
+def about_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("about.html", _build_context(request))
 
 
 @app.post("/papers")
@@ -258,7 +278,11 @@ def vote_on_paper(paper_id: int, request: Request):
         conn.execute("UPDATE papers SET votes = votes + 1 WHERE id = ?", (paper_id,))
         conn.commit()
 
-    return _hx_or_redirect(request)
+    return _hx_or_redirect(
+        request,
+        template_name="partials/candidates.html",
+        redirect_path="/vote",
+    )
 
 
 @app.post("/papers/{paper_id}/select")
