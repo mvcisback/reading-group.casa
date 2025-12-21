@@ -3,7 +3,9 @@ import hmac
 import os
 import secrets
 import sqlite3
+from pathlib import Path
 
+import typer
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,6 +28,9 @@ PRIORITY_BUCKETS = [
     (4, "Critical", "bg-rose-500"),
 ]
 QUEUE_SIZE = 3
+
+
+cli = typer.Typer(invoke_without_command=True)
 
 
 def _db_path() -> str:
@@ -425,7 +430,39 @@ def logout_user(request: Request):
     return response
 
 
-if __name__ == "__main__":
+def _configure_db_path(db_path: Path) -> None:
+    resolved_path = str(db_path)
+    app.state.db_path = resolved_path
+    os.environ["READING_GROUP_DB"] = resolved_path
+
+
+def _run_server(db_path: Path, host: str, port: int, reload: bool) -> None:
+    _configure_db_path(db_path)
     import uvicorn
 
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host=host, port=port, reload=reload)
+
+
+@cli.callback(invoke_without_command=True)
+def main_cli(
+    ctx: typer.Context,
+    db_path: Path = typer.Option(
+        Path("reading_group.db"),
+        "--db-path",
+        "-d",
+        help="Path to the SQLite database file.",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host."),
+    port: int = typer.Option(8000, "--port", "-p", help="Server port."),
+    reload: bool = typer.Option(
+        True,
+        "--reload/--no-reload",
+        help="Enable uvicorn auto-reload when running locally.",
+    ),
+) -> None:
+    if ctx.invoked_subcommand is None:
+        _run_server(db_path, host, port, reload)
+
+
+if __name__ == "__main__":
+    cli()

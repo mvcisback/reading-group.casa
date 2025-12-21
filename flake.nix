@@ -46,6 +46,11 @@
           ]
         );
         venv = pythonSet.mkVirtualEnv "reading-group-venv" workspace.deps.default;
+        server = pkgs.writeShellScriptBin "reading-group-server" ''
+          cd ${workspaceRoot}
+          export PYTHONPATH=${workspaceRoot}
+          exec ${venv}/bin/python main.py "$@"
+        '';
       in
       {
         devShells.default = pkgs.mkShell {
@@ -56,6 +61,10 @@
           shellHook = ''
             export PYTHONPATH=${workspaceRoot}
           '';
+        };
+        apps.default = {
+          type = "app";
+          program = "${server}/bin/reading-group-server";
         };
       });
 }

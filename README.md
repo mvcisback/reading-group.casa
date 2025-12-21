@@ -14,7 +14,13 @@ Lightweight FastAPI + htmx application for nominating, voting on, and selecting 
 pip install .
 uvicorn main:app --reload
 ```
-Use `python main.py` as an alternative that delegates to `uvicorn` with sensible defaults.
+Use `python main.py` (or `python main.py --db-path /tmp/reading_group.db`) instead to start the bundled CLI, which exposes `--db-path`, `--host`, `--port`, and `--reload/--no-reload` flags.
+
+## Running with Nix
+```bash
+nix run
+```
+This runs the Typer CLI inside `main.py` via the uv2nix-generated virtualenv. Pass CLI arguments after `--` if you need to override the database location or networking options, for example `nix run -- --db-path /tmp/reading_group.db`.
 
 ## Database
 Data is stored in `reading_group.db` (SQLite) in the project root. The database is created automatically on first launch and does not require migrations yet.
