@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reading Group</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100">
+  <div class="min-h-screen px-4 py-8">
+    <div class="mx-auto flex max-w-6xl flex-col gap-6">
+      <header class="space-y-1 text-center">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Reading Group Coordinator</p>
+        <h1 class="text-3xl font-semibold text-white">Share, vote, and lock in the next paper</h1>
+        <p class="text-base text-slate-300">FastAPI + htmx keeps the experience simple and responsive.</p>
+      </header>
+      <main class="flex-1">
+        {% block content %}{% endblock %}
+      </main>
+      <footer class="text-center text-xs text-slate-500">
+        <p>Powered by FastAPI, htmx, and Tailwind.</p>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>

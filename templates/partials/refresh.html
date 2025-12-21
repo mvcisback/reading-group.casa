@@ -1,0 +1,78 @@
+<section aria-label="Upcoming reading" class="mb-6 rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+  <header class="mb-3">
+    <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Upcoming</p>
+    <h2 class="text-2xl font-semibold text-white">Next selection</h2>
+  </header>
+  {% if upcoming %}
+    <article class="space-y-3">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="text-xl font-semibold text-white">{{ upcoming.title }}</p>
+          {% if upcoming.authors %}
+            <p class="text-sm text-slate-400">{{ upcoming.authors }}</p>
+          {% endif %}
+        </div>
+        {% if upcoming.selected %}
+          <span class="rounded-full bg-emerald-500 px-3 py-1 text-sm font-semibold text-emerald-900">Selected</span>
+        {% endif %}
+      </div>
+      <p class="text-sm text-slate-400">Votes: {{ upcoming.votes or 0 }}</p>
+      <div class="flex flex-wrap gap-3 text-sm text-slate-300">
+        {% if upcoming.paper_url %}
+          <a href="{{ upcoming.paper_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 transition hover:bg-slate-800">View paper</a>
+        {% endif %}
+        {% if upcoming.notes_url %}
+          <a href="{{ upcoming.notes_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 transition hover:bg-slate-800">Notes</a>
+        {% endif %}
+      </div>
+    </article>
+  {% else %}
+    <p class="text-sm text-slate-400">No paper has been selected yet. Nominate, vote, and choose to fill this slot.</p>
+  {% endif %}
+</section>
+<section aria-label="Candidate papers" class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+  <header class="mb-4">
+    <h2 class="text-xl font-semibold text-white">Candidate list</h2>
+    <p class="text-sm text-slate-400">Votes reorder the list. Select one to lock it in for the next session.</p>
+  </header>
+  {% if papers %}
+    <div class="space-y-4">
+      {% for paper in papers %}
+        <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+          <header class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-lg font-semibold text-white">{{ paper.title }}</p>
+              {% if paper.authors %}
+                <p class="text-sm text-slate-400">{{ paper.authors }}</p>
+              {% endif %}
+            </div>
+            <div class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-300">
+              <span class="rounded-full bg-slate-800 px-3 py-1">{{ paper.votes or 0 }} votes</span>
+              {% if paper.selected %}
+                <span class="rounded-full bg-emerald-500 px-3 py-1 font-semibold text-emerald-900">Selected</span>
+              {% endif %}
+            </div>
+          </header>
+          <div class="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
+            {% if paper.paper_url %}
+              <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 transition hover:bg-slate-800">View paper</a>
+            {% endif %}
+            {% if paper.notes_url %}
+              <a href="{{ paper.notes_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 transition hover:bg-slate-800">Read notes</a>
+            {% endif %}
+          </div>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <form method="post" action="/papers/{{ paper.id }}/vote" hx-post="/papers/{{ paper.id }}/vote" hx-target="#papers-panel" hx-swap="innerHTML" class="flex-1 min-w-[140px]">
+              <button type="submit" class="w-full rounded-2xl bg-sky-500 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-slate-950 transition hover:bg-sky-400">Vote</button>
+            </form>
+            <form method="post" action="/papers/{{ paper.id }}/select" hx-post="/papers/{{ paper.id }}/select" hx-target="#papers-panel" hx-swap="innerHTML" class="flex-1 min-w-[140px]">
+              <button type="submit" class="w-full rounded-2xl bg-emerald-500 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-emerald-900 transition hover:bg-emerald-400">Select next</button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-sm text-slate-400">No papers registered yet. Use the nomination form to add one.</p>
+  {% endif %}
+</section>
