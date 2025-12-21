@@ -1,25 +1,34 @@
 <section aria-label="Upcoming reading" class="mb-6 rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
   <header class="mb-3">
     <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Upcoming</p>
-    <h2 class="text-2xl font-semibold text-white">Next selection</h2>
+    <h2 class="text-2xl font-semibold text-white">Scheduled reads</h2>
   </header>
-  {% if upcoming %}
-    <article class="space-y-3">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <p class="text-xl font-semibold text-white">{{ upcoming.title }}</p>
-        {% if upcoming.selected %}
-          <span class="rounded-full bg-emerald-500 px-3 py-1 text-sm font-semibold text-emerald-900">Selected</span>
-        {% endif %}
-      </div>
-      <p class="text-sm text-slate-400">Votes: {{ upcoming.votes or 0 }}</p>
-      {% if upcoming.paper_url %}
-        <a href="{{ upcoming.paper_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
-      {% else %}
-        <p class="text-sm text-slate-400">No reference link provided yet.</p>
-      {% endif %}
-    </article>
+  {% if selected_papers %}
+    <div class="space-y-4">
+      {% for paper in selected_papers %}
+        <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <p class="text-xl font-semibold text-white">{{ paper.title }}</p>
+            {% if paper.selected_at %}
+              <div class="text-right text-sm text-slate-400">
+                <p class="text-[0.6rem] uppercase tracking-[0.4em] text-slate-500">Date</p>
+                <time datetime="{{ paper.selected_at }}" class="font-semibold text-white">{{ paper.selected_at }}</time>
+              </div>
+            {% else %}
+              <span class="text-sm font-semibold text-slate-400">Date TBD</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-slate-400">Votes: {{ paper.votes or 0 }}</p>
+          {% if paper.paper_url %}
+            <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
+          {% else %}
+            <p class="text-sm text-slate-400">No reference link provided yet.</p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
   {% else %}
-    <p class="text-sm text-slate-400">No paper has been selected yet. Nominate, vote, and choose to fill this slot.</p>
+    <p class="text-sm text-slate-400">No papers have been selected yet. Nominate, vote, and choose to fill the calendar.</p>
   {% endif %}
 </section>
 <section aria-label="Candidate papers" class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
@@ -39,10 +48,15 @@
         <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
           <header class="flex flex-wrap items-center justify-between gap-3">
             <p class="text-lg font-semibold text-white">{{ paper.title }}</p>
-            <div class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-300">
+            <div class="flex flex-wrap items-center gap-3 text-sm text-slate-300">
               <span class="rounded-full bg-slate-800 px-3 py-1">{{ paper.votes or 0 }} votes</span>
               {% if paper.selected %}
-                <span class="rounded-full bg-emerald-500 px-3 py-1 font-semibold text-emerald-900">Selected</span>
+                <div class="flex items-center gap-2">
+                  <span class="rounded-full bg-emerald-500 px-3 py-1 font-semibold text-emerald-900">Selected</span>
+                  {% if paper.selected_at %}
+                    <time datetime="{{ paper.selected_at }}" class="text-xs font-semibold text-emerald-300">for {{ paper.selected_at }}</time>
+                  {% endif %}
+                </div>
               {% endif %}
             </div>
           </header>
@@ -61,9 +75,18 @@
             {% else %}
               <button type="button" disabled class="flex-1 min-w-[140px] rounded-2xl bg-slate-800 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-slate-500 cursor-not-allowed">Log in to vote</button>
             {% endif %}
-            <form method="post" action="/papers/{{ paper.id }}/select" hx-post="/papers/{{ paper.id }}/select" hx-target="#papers-panel" hx-swap="innerHTML" class="flex-1 min-w-[140px]">
-              <button type="submit" class="w-full rounded-2xl bg-emerald-500 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-emerald-900 transition hover:bg-emerald-400">Select next</button>
+            <form method="post" action="/papers/{{ paper.id }}/select" hx-post="/papers/{{ paper.id }}/select" hx-target="#papers-panel" hx-swap="innerHTML" class="flex flex-col gap-2 flex-1 min-w-[200px]">
+              <label class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                Meeting date
+                <input type="date" name="selected_date" value="{{ paper.selected_at or '' }}" class="mt-1 w-full rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none" />
+              </label>
+              <button type="submit" class="w-full rounded-2xl bg-emerald-500 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-emerald-900 transition hover:bg-emerald-400">Schedule</button>
             </form>
+            {% if paper.selected %}
+              <form method="post" action="/papers/{{ paper.id }}/unselect" hx-post="/papers/{{ paper.id }}/unselect" hx-target="#papers-panel" hx-swap="innerHTML" class="flex-1 min-w-[140px]">
+                <button type="submit" class="w-full rounded-2xl border border-emerald-500 px-4 py-2 text-center text-sm font-semibold uppercase tracking-widest text-emerald-300 transition hover:border-emerald-400">Unselect</button>
+              </form>
+            {% endif %}
           </div>
         </article>
       {% endfor %}

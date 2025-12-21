@@ -5,8 +5,8 @@ Lightweight FastAPI + htmx application for nominating, voting on, and selecting 
 ## Features
 - Register new papers along with optional reference links.
 - Create an account, log in, and vote once per paper so you can back every contender that matters to you.
-- Select a single paper as the next reading assignment.
-- Highlight the upcoming paper with any provided reference link.
+- Schedule multiple papers with dates so everyone knows which reads are coming up and can reschedule or unselect when plans change.
+- Highlight the scheduled selections and their reference links.
 - Frontend powered by htmx and styled with Tailwind via CDN.
 
 ## Getting Started

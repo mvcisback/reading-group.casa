@@ -3,6 +3,7 @@ import hmac
 import os
 import secrets
 import sqlite3
+from datetime import date
 from typing import Iterable
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -36,14 +37,15 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             paper_url TEXT,
             votes INTEGER NOT NULL DEFAULT 0,
-            selected INTEGER NOT NULL DEFAULT 0
+            selected INTEGER NOT NULL DEFAULT 0,
+            selected_at TEXT
         )
         """
     )
 
 
 def _ensure_papers_table(conn: sqlite3.Connection) -> None:
-    desired_columns = {"id", "title", "paper_url", "votes", "selected"}
+    desired_columns = {"id", "title", "paper_url", "votes", "selected", "selected_at"}
     exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
     ).fetchone()
@@ -58,8 +60,8 @@ def _ensure_papers_table(conn: sqlite3.Connection) -> None:
         _create_papers_table(conn)
         conn.execute(
             """
-            INSERT INTO papers (id, title, paper_url, votes, selected)
-            SELECT id, title, paper_url, votes, selected FROM papers_old
+            INSERT INTO papers (id, title, paper_url, votes, selected, selected_at)
+            SELECT id, title, paper_url, votes, selected, CASE WHEN selected = 1 THEN DATE('now') ELSE NULL END FROM papers_old
             """
         )
         conn.execute("DROP TABLE papers_old")
@@ -119,16 +121,26 @@ def _init_db() -> None:
 def _fetch_papers() -> list[sqlite3.Row]:
     with _connect() as conn:
         cursor = conn.execute(
-            "SELECT * FROM papers ORDER BY selected DESC, votes DESC, title ASC"
+            "SELECT * FROM papers ORDER BY selected DESC, COALESCE(selected_at, '9999-12-31') ASC, votes DESC, title ASC"
         )
         return cursor.fetchall()
 
 
-def _resolve_upcoming(papers: Iterable[sqlite3.Row]) -> sqlite3.Row | None:
-    for paper in papers:
-        if paper["selected"]:
-            return paper
-    return next(iter(papers), None)
+def _normalize_selected_date(selected_date: str | None) -> str:
+    if selected_date:
+        try:
+            return date.fromisoformat(selected_date).isoformat()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Select a valid date")
+    return date.today().isoformat()
+
+
+def _selected_papers(papers: Iterable[sqlite3.Row]) -> list[sqlite3.Row]:
+    selected = [paper for paper in papers if paper["selected"]]
+    return sorted(
+        selected,
+        key=lambda paper: paper["selected_at"] or "9999-12-31",
+    )
 
 
 def _get_user_from_token(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row | None:
@@ -155,12 +167,12 @@ def _current_user(request: Request) -> sqlite3.Row | None:
 
 def _build_context(request: Request) -> dict:
     papers = _fetch_papers()
-    upcoming = _resolve_upcoming(papers)
+    selected = _selected_papers(papers)
     user = _current_user(request)
     return {
         "request": request,
         "papers": papers,
-        "upcoming": upcoming,
+        "selected_papers": selected,
         "user": user,
     }
 
@@ -250,10 +262,31 @@ def vote_on_paper(paper_id: int, request: Request):
 
 
 @app.post("/papers/{paper_id}/select")
-def select_paper(paper_id: int, request: Request):
+def select_paper(
+    paper_id: int,
+    request: Request,
+    selected_date: str | None = Form(None),
+):
     with _connect() as conn:
-        conn.execute("UPDATE papers SET selected = 0 WHERE selected != 0")
-        result = conn.execute("UPDATE papers SET selected = 1 WHERE id = ?", (paper_id,))
+        selected_at = _normalize_selected_date(selected_date)
+        result = conn.execute(
+            "UPDATE papers SET selected = 1, selected_at = ? WHERE id = ?",
+            (selected_at, paper_id),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        conn.commit()
+
+    return _hx_or_redirect(request)
+
+
+@app.post("/papers/{paper_id}/unselect")
+def unselect_paper(paper_id: int, request: Request):
+    with _connect() as conn:
+        result = conn.execute(
+            "UPDATE papers SET selected = 0, selected_at = NULL WHERE id = ?",
+            (paper_id,),
+        )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
         conn.commit()
