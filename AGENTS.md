@@ -1,7 +1,7 @@
 # AGENTS GUIDE
 
 ## High-level overview
-- This is a lightweight FastAPI service that coordinates a reading group: register papers, vote, link notes, and select the next title.
+- This is a lightweight FastAPI service that coordinates a reading group: register papers with optional reference links, vote once per session, and select the next title.
 - HTMX drives the surface: every form submission targets the `#papers-panel` container and the backend returns `templates/partials/refresh.html` to refresh only the dynamic portion of the page.
 - Tailwind CSS (via CDN) and semantic HTML keep the UI tidy without managing local stylesheets.
 - Data persists in SQLite (`reading_group.db`), created automatically on startup by `_init_db()` in `main.py`.
@@ -25,7 +25,7 @@
 - Keep new templates semantic (`<section>`, `<article>`, `<header>`, `<main>`). Use Tailwind utility classes for layout.
 - HTML forms set `hx-post`, `hx-target="#papers-panel"`, and `hx-swap="innerHTML"` so responses automatically update the candidate/upcoming panel.
 - The `selected` column stores `0/1`. `_resolve_upcoming()` reads papers ordered by `selected DESC, votes DESC, title ASC` so the chosen paper always appears first.
-- `main.py` enforces a stripped, non-empty title when registering. Optional fields (`authors`, `paper_url`, `notes_url`) are normalized to `None` if blank.
+- `main.py` enforces a stripped, non-empty title when registering. The optional `paper_url` is normalized to `None` if blank so only the title/link pair is stored.
 
 ## Persistence & configuration
 - Default database path: `reading_group.db` in the repo root. Override with the `READING_GROUP_DB` environment variable or by assigning `app.state.db_path` before tests or scripts run.
@@ -44,5 +44,6 @@
 ## Gotchas & notes
 - HTMX requests are detected via the `HX-Request` header. `_hx_or_redirect()` renders `templates/partials/refresh.html` for HTMX and issues a 303 redirect for standard submissions.
 - When adding new forms or buttons that should refresh live content, ensure they hit `/papers` or `/papers/{id}/...` with the correct `hx-target`. If you accidentally return a full page for an HTMX request, the DOM swap will replace more than intended.
+- Voting requires signing in; the `reading_group_session` cookie identifies the authenticated account and lets it cast one vote per paper. Attempting to vote without logging in returns HTTP 401, and voting for the same paper a second time returns HTTP 400 with an explanatory detail.
 - Tailwind is loaded through `https://cdn.tailwindcss.com`; there is no build step for CSS. Keep the markup focused on utility classes.
 - Because the DB lives in the workspace root, delete `reading_group.db` when you need to reset nominations; the schema is recreated automatically on next run.

@@ -3,10 +3,10 @@
 Lightweight FastAPI + htmx application for nominating, voting on, and selecting papers for your reading group.
 
 ## Features
-- Register new papers along with optional notes and reference links.
-- Vote on papers to surface popular picks.
+- Register new papers along with optional reference links.
+- Create an account, log in, and vote once per paper so you can back every contender that matters to you.
 - Select a single paper as the next reading assignment.
-- Highlight the upcoming paper with notes and resource links.
+- Highlight the upcoming paper with any provided reference link.
 - Frontend powered by htmx and styled with Tailwind via CDN.
 
 ## Getting Started
@@ -21,7 +21,7 @@ Data is stored in `reading_group.db` (SQLite) in the project root. The database 
 
 ## Testing
 ```bash
-python -m pytest
+nix develop --command bash -c "uv run pytest"
 ```
 
 The existing test suite uses FastAPI's `TestClient` to verify that the home page renders successfully.

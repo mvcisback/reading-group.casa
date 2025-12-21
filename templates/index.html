@@ -5,61 +5,92 @@
     <div>
       <h2 class="text-lg font-semibold text-white">How it works</h2>
       <p class="mt-2 text-sm text-slate-400">
-        Nominate papers, vote with your group, and select the next reading in one place. HTMX keeps the experience snappy without full page refreshes.
+        Nominate papers, log in, and then vote to lift the most popular pick while HTMX keeps the experience snappy.
       </p>
       <dl class="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
         <div>
           <dt class="font-semibold text-white">Nominate</dt>
-          <dd class="text-slate-400">Submit title, authors, and links for each suggestion.</dd>
+          <dd class="text-slate-400">Submit a thoughtful title and reference so the group can review the idea.</dd>
         </div>
         <div>
           <dt class="font-semibold text-white">Vote</dt>
-          <dd class="text-slate-400">Raise the most popular picks in the candidate list.</dd>
+          <dd class="text-slate-400">Sign in to cast one vote per paper so every contender gets a fair shot.</dd>
         </div>
         <div>
           <dt class="font-semibold text-white">Select</dt>
-          <dd class="text-slate-400">Mark one paper as upcoming for the next session.</dd>
+          <dd class="text-slate-400">Mark a single paper as the upcoming read so the group knows what to prepare next.</dd>
         </div>
         <div>
-          <dt class="font-semibold text-white">Share notes</dt>
-          <dd class="text-slate-400">Append links to notes or slides so everyone can prep.</dd>
+          <dt class="font-semibold text-white">Refresh</dt>
+          <dd class="text-slate-400">HTMX keeps the candidate panel current without reloading the page.</dd>
         </div>
       </dl>
     </div>
     <div>
       <h3 class="text-sm font-semibold uppercase tracking-[0.4em] text-slate-500">Live updates</h3>
-      <p class="mt-2 text-sm text-slate-400">Every action pushes the refreshed panel via HTMX for immediate feedback.</p>
+      <p class="mt-2 text-sm text-slate-400">Every interaction refreshes #papers-panel through HTMX for immediate feedback.</p>
     </div>
   </section>
   <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
     <article id="papers-panel" class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl" hx-target="this" hx-swap="innerHTML">
       {% include "partials/refresh.html" %}
     </article>
-    <section aria-label="Nominate a paper" class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <header class="mb-4">
-        <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Nominate</p>
-        <h2 class="text-xl font-semibold text-white">Register a paper</h2>
-      </header>
-      <form action="/papers" method="post" hx-post="/papers" hx-target="#papers-panel" hx-swap="innerHTML" class="flex flex-col gap-4">
-        <label class="text-sm text-slate-300">
-          <span class="mb-1 block font-semibold text-white">Title</span>
-          <input name="title" required class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Enter the paper title" />
-        </label>
-        <label class="text-sm text-slate-300">
-          <span class="mb-1 block font-semibold text-white">Authors</span>
-          <input name="authors" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Author list or venue" />
-        </label>
-        <label class="text-sm text-slate-300">
-          <span class="mb-1 block font-semibold text-white">Paper URL</span>
-          <input name="paper_url" type="url" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="https://" />
-        </label>
-        <label class="text-sm text-slate-300">
-          <span class="mb-1 block font-semibold text-white">Notes URL</span>
-          <input name="notes_url" type="url" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" placeholder="https://" />
-        </label>
-        <button type="submit" class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Add to list</button>
-      </form>
-      <p class="mt-4 text-xs text-slate-500">Calls run via HTMX for a smooth, SPA-like feel. The database stays in SQLite until you swap it.</p>
+    <section class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div class="space-y-6">
+        <div>
+          <header class="mb-4">
+            <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Nominate</p>
+            <h2 class="text-xl font-semibold text-white">Register a paper</h2>
+          </header>
+          <form action="/papers" method="post" hx-post="/papers" hx-target="#papers-panel" hx-swap="innerHTML" class="flex flex-col gap-4">
+            <label class="text-sm text-slate-300">
+              <span class="mb-1 block font-semibold text-white">Title</span>
+              <input name="title" required class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Enter the paper title" />
+            </label>
+            <label class="text-sm text-slate-300">
+              <span class="mb-1 block font-semibold text-white">Reference link</span>
+              <input name="paper_url" type="url" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="https://" />
+            </label>
+            <button type="submit" class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Add to list</button>
+          </form>
+          <p class="mt-4 text-xs text-slate-500">Votes require an account; log in or register so you can support multiple papers.</p>
+        </div>
+        <div class="rounded-3xl border border-slate-800 bg-slate-950 p-5">
+          <header class="mb-3">
+            <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Account</p>
+            <h3 class="text-lg font-semibold text-white">Stay signed in</h3>
+          </header>
+          {% if user %}
+            <p class="text-sm text-slate-300">Signed in as <span class="font-semibold text-white">{{ user.username }}</span></p>
+            <form method="post" action="/users/logout" class="mt-4">
+              <button type="submit" class="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:bg-slate-600">Log out</button>
+            </form>
+          {% else %}
+            <form method="post" action="/users/register" class="space-y-3">
+              <label class="text-sm text-slate-300">
+                <span class="mb-1 block font-semibold text-white">Username</span>
+                <input name="username" required autocomplete="username" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="e.g. reader01" />
+              </label>
+              <label class="text-sm text-slate-300">
+                <span class="mb-1 block font-semibold text-white">Password</span>
+                <input name="password" type="password" required autocomplete="new-password" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Create a password" />
+              </label>
+              <button type="submit" class="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-900 transition hover:bg-emerald-400">Create account</button>
+            </form>
+            <form method="post" action="/users/login" class="mt-4 space-y-3">
+              <label class="text-sm text-slate-300">
+                <span class="mb-1 block font-semibold text-white">Username</span>
+                <input name="username" required autocomplete="username" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Username" />
+              </label>
+              <label class="text-sm text-slate-300">
+                <span class="mb-1 block font-semibold text-white">Password</span>
+                <input name="password" type="password" required autocomplete="current-password" class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none" placeholder="Password" />
+              </label>
+              <button type="submit" class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Log in</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
     </section>
   </section>
 {% endblock %}
