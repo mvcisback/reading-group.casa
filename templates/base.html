@@ -9,25 +9,56 @@
   <style>
     :root {
       color-scheme: dark;
+      --bg-body: #020617;
+      --panel-bg: #0f172a;
+      --accent: #0ea5e9;
+      --transition-duration: 0.45s;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
     }
     body {
+      background: var(--bg-body);
+      color: #e2e8f0;
       view-transition-name: page;
-      transition: background 0.4s ease, color 0.4s ease;
+      transition: background var(--transition-duration) ease, color var(--transition-duration) ease;
+    }
+    main {
+      view-transition-name: page-content;
+    }
+    article,
+    section,
+    nav {
+      transition: transform var(--transition-duration) ease, opacity var(--transition-duration) ease;
     }
     @media (prefers-reduced-motion: no-preference) {
       ::view-transition-old(body),
       ::view-transition-new(body) {
-        animation: fade-page 0.4s ease-in-out both;
+        animation: fade-page var(--transition-duration) ease both;
       }
-      @keyframes fade-page {
-        from {
-          opacity: 0.92;
-          transform: translateY(6px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      ::view-transition-old(main),
+      ::view-transition-new(main) {
+        animation: float-page var(--transition-duration) ease both;
+      }
+    }
+    @keyframes fade-page {
+      from {
+        opacity: 0.85;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes float-page {
+      from {
+        opacity: 0.6;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
       }
     }
     nav a {
@@ -43,12 +74,9 @@
 <body class="bg-slate-950 text-slate-100">
   <div class="min-h-screen px-4 py-8">
     <div class="mx-auto flex max-w-6xl flex-col gap-6">
-      <header class="space-y-4 text-center">
-        <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Reading Group Coordinator</p>
-        <h1 class="text-4xl font-semibold text-white">Share, vote, and schedule the next paper</h1>
-        <p class="text-base text-slate-300">
-          FastAPI, htmx, and Tailwind combine for a responsive, multi-page experience with smooth CSS view transitions.
-        </p>
+      <header class="space-y-2 text-center">
+        <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Reading Group</p>
+        <h1 class="text-4xl font-semibold text-white">Curate the next paper</h1>
         <nav aria-label="Primary" class="flex flex-wrap justify-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-400">
           <a href="/" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">Schedule</a>
           <a href="/vote" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">Vote</a>
@@ -56,6 +84,26 @@
           <a href="/about" data-view-transition class="border-slate-800 bg-slate-900 px-4 py-2 text-slate-200 transition hover:border-slate-700">About</a>
         </nav>
       </header>
+      {% if request.url.path == '/' and selected_papers %}
+      {% set next_paper = selected_papers[0] %}
+      <div class="sticky top-4 z-20 -mx-4 rounded-3xl border border-slate-800 bg-slate-900/90 px-6 py-4 shadow-2xl backdrop-blur">
+        <p class="text-[0.6rem] uppercase tracking-[0.5em] text-slate-500">Next read</p>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <p class="text-lg font-semibold text-white">{{ next_paper.title }}</p>
+          <span class="text-xs text-slate-400">{{ next_paper.votes or 0 }} votes</span>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          {% if next_paper.selected_at %}
+            <span>on {{ next_paper.selected_at }}</span>
+          {% else %}
+            <span>Date TBD</span>
+          {% endif %}
+          {% if next_paper.paper_url %}
+            <a href="{{ next_paper.paper_url }}" target="_blank" rel="noreferrer" class="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-slate-500">Reference</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
       <main class="flex-1">
         {% block content %}{% endblock %}
       </main>

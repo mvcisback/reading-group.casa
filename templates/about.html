@@ -1,33 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="space-y-3 text-center">
+  <section class="text-center space-y-1">
     <p class="text-xs uppercase tracking-[0.4em] text-slate-500">About</p>
     <h2 class="text-3xl font-semibold text-white">Reading Group Coordinator</h2>
-    <p class="text-sm text-slate-300">
-      This tool keeps nominations, votes, and the schedule coordinated through FastAPI, HTMX, and a SQLite backend.
-    </p>
   </section>
-  <section class="space-y-6">
+  <section class="mt-6 max-w-3xl space-y-4">
     <article class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <h3 class="text-lg font-semibold text-white">Multi-page layout</h3>
-      <p class="mt-2 text-sm text-slate-300">
-        The navigation separates scheduling, voting, and account pages while CSS view transitions keep page changes feeling fluid.
-      </p>
-    </article>
-    <article class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <h3 class="text-lg font-semibold text-white">How it works</h3>
-      <ul class="mt-2 space-y-2 text-sm text-slate-300">
-        <li>Nominate papers on the home schedule so the backlog stays stocked.</li>
-        <li>Vote once per paper once you are logged in on the dedicated vote screen.</li>
-        <li>Select papers for upcoming meetings with optional dates to keep the group on track.</li>
+      <h3 class="text-lg font-semibold text-white">Core ideas</h3>
+      <ul class="mt-3 space-y-2 text-sm text-slate-300">
+        <li>Keep the schedule front-and-center so everyone sees the next meeting.</li>
+        <li>Let members vote securely after signing in so the community decides.</li>
+        <li>Use HTMX + view transitions for smooth navigation across pages.</li>
       </ul>
-    </article>
-    <article class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <h3 class="text-lg font-semibold text-white">Under the hood</h3>
-      <p class="mt-2 text-sm text-slate-300">
-        FastAPI handles the POST hooks while HTMX keeps interactions snappy. New views still reuse shared partials for consistent styling.
-      </p>
     </article>
   </section>
 {% endblock %}

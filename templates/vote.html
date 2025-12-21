@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="space-y-3 text-center">
+  <section class="text-center space-y-1">
     <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Voting</p>
-    <h2 class="text-3xl font-semibold text-white">Let the group choose together</h2>
-    <p class="text-sm text-slate-300">
-      Cast one vote per paper while signed in, then watch the leaderboard refresh instantly.
-    </p>
+    <h2 class="text-3xl font-semibold text-white">Choose the next read</h2>
   </section>
-  <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+  <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
     <article
       id="candidates-panel"
       class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
@@ -18,21 +15,16 @@
       {% include "partials/candidates.html" %}
     </article>
     <section class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <header class="mb-4">
-        <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Account</p>
-        <h3 class="text-lg font-semibold text-white">Stay signed in</h3>
-      </header>
       {% if user %}
         <p class="text-sm text-slate-300">Signed in as <span class="font-semibold text-white">{{ user.username }}</span></p>
         <form method="post" action="/users/logout" class="mt-4">
           <button type="submit" class="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:bg-slate-600">Log out</button>
         </form>
       {% else %}
-        <p class="text-sm text-slate-300">Log in to unlock voting rights.</p>
-        <a data-view-transition href="/login" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Sign in or register</a>
+        <a data-view-transition href="/login" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Sign in to vote</a>
       {% endif %}
-      <p class="mt-6 text-xs text-slate-500">
-        Want to control the schedule? <a data-view-transition href="/" class="text-slate-200 underline">Visit the schedule page</a>.
+      <p class="mt-4 text-xs text-slate-500">
+        Back to the <a data-view-transition href="/" class="text-slate-200 underline">schedule</a>.
       </p>
     </section>
   </section>

@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="space-y-3 text-center">
-    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Schedule & backlog</p>
-    <h2 class="text-3xl font-semibold text-white">Keep the calendar flowing</h2>
-    <p class="text-sm text-slate-300">
-      Home highlights the upcoming schedule and the backlog so you can see what is locked in and what still needs attention.
-    </p>
+  <section class="text-center space-y-1">
+    <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Schedule</p>
+    <h2 class="text-3xl font-semibold text-white">Upcoming reads</h2>
   </section>
-  <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+  <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
     <article
       id="papers-panel"
       class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
@@ -18,10 +15,9 @@
       {% include "partials/refresh.html" %}
     </article>
     <section class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <header class="mb-5">
+      <header class="mb-4">
         <p class="text-xs uppercase tracking-[0.6em] text-slate-500">Nominate</p>
-        <h2 class="text-xl font-semibold text-white">Register a paper</h2>
-        <p class="text-sm text-slate-300">Drop a title and optional reference to keep the backlog full.</p>
+        <h2 class="text-lg font-semibold text-white">Register a paper</h2>
       </header>
       <form action="/papers" method="post" hx-post="/papers" hx-target="#papers-panel" hx-swap="innerHTML" class="flex flex-col gap-4">
         <label class="text-sm text-slate-300">
@@ -46,11 +42,11 @@
           type="submit"
           class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400"
         >
-          Add to backlog
+          Add paper
         </button>
       </form>
       {% if user %}
-        <div class="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+        <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
           <p>
             Signed in as <span class="font-semibold text-white">{{ user.username }}</span>
           </p>
@@ -63,12 +59,11 @@
             </button>
           </form>
         </div>
+      {% else %}
+        <a data-view-transition href="/login" class="mt-4 inline-flex items-center justify-center rounded-2xl border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-slate-500">Sign in or create an account</a>
       {% endif %}
       <p class="mt-4 text-xs text-slate-500">
-        Need to vote? <a data-view-transition href="/vote" class="text-slate-200 underline">Head to the voting page</a>.
-      </p>
-      <p class="text-xs text-slate-500">
-        Want to sign in or manage your account? <a data-view-transition href="/login" class="text-slate-200 underline">Use the account area</a>.
+        Voting on the <a data-view-transition href="/vote" class="text-slate-200 underline">vote page</a>.
       </p>
     </section>
   </section>
