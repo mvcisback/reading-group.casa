@@ -3,8 +3,6 @@ import hmac
 import os
 import secrets
 import sqlite3
-from datetime import date
-from typing import Iterable
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,6 +11,21 @@ from fastapi.templating import Jinja2Templates
 app = FastAPI(title="Reading Group Coordinator")
 templates = Jinja2Templates(directory="templates")
 SESSION_COOKIE = "reading_group_session"
+PRIORITY_LEVELS = {1, 2, 3, 4}
+PRIORITY_LABELS = {
+    0: "Unranked",
+    1: "Low",
+    2: "Medium",
+    3: "High",
+    4: "Critical",
+}
+PRIORITY_BUCKETS = [
+    (1, "Low", "bg-slate-500"),
+    (2, "Medium", "bg-sky-500"),
+    (3, "High", "bg-amber-500"),
+    (4, "Critical", "bg-rose-500"),
+]
+QUEUE_SIZE = 3
 
 
 def _db_path() -> str:
@@ -29,6 +42,18 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _priority_label(score: float) -> str:
+    if score >= 3.5:
+        return PRIORITY_LABELS[4]
+    if score >= 2.5:
+        return PRIORITY_LABELS[3]
+    if score >= 1.5:
+        return PRIORITY_LABELS[2]
+    if score > 0:
+        return PRIORITY_LABELS[1]
+    return PRIORITY_LABELS[0]
+
+
 def _create_papers_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -36,16 +61,14 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             paper_url TEXT,
-            votes INTEGER NOT NULL DEFAULT 0,
-            selected INTEGER NOT NULL DEFAULT 0,
-            selected_at TEXT
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
 
 
 def _ensure_papers_table(conn: sqlite3.Connection) -> None:
-    desired_columns = {"id", "title", "paper_url", "votes", "selected", "selected_at"}
+    desired_columns = {"id", "title", "paper_url", "created_at"}
     exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
     ).fetchone()
@@ -60,8 +83,8 @@ def _ensure_papers_table(conn: sqlite3.Connection) -> None:
         _create_papers_table(conn)
         conn.execute(
             """
-            INSERT INTO papers (id, title, paper_url, votes, selected, selected_at)
-            SELECT id, title, paper_url, votes, selected, CASE WHEN selected = 1 THEN DATE('now') ELSE NULL END FROM papers_old
+            INSERT INTO papers (id, title, paper_url, created_at)
+            SELECT id, title, paper_url, COALESCE(selected_at, DATETIME('now')) FROM papers_old
             """
         )
         conn.execute("DROP TABLE papers_old")
@@ -80,13 +103,14 @@ def _ensure_users_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _ensure_votes_table(conn: sqlite3.Connection) -> None:
+def _create_votes_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS votes (
+        CREATE TABLE votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             paper_id INTEGER NOT NULL,
+            priority_level INTEGER NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, paper_id),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -94,6 +118,23 @@ def _ensure_votes_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _ensure_votes_table(conn: sqlite3.Connection) -> None:
+    desired_columns = {"id", "user_id", "paper_id", "priority_level", "created_at"}
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='votes'"
+    ).fetchone()
+    if not exists:
+        _create_votes_table(conn)
+        return
+
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(votes)")]
+    if set(columns) != desired_columns:
+        conn.execute("DROP TABLE IF EXISTS votes_old")
+        conn.execute("ALTER TABLE votes RENAME TO votes_old")
+        _create_votes_table(conn)
+        conn.execute("DROP TABLE votes_old")
 
 
 def _ensure_sessions_table(conn: sqlite3.Connection) -> None:
@@ -118,29 +159,62 @@ def _init_db() -> None:
         conn.commit()
 
 
-def _fetch_papers() -> list[sqlite3.Row]:
+def _fetch_papers(user_id: int | None) -> list[dict]:
     with _connect() as conn:
         cursor = conn.execute(
-            "SELECT * FROM papers ORDER BY selected DESC, COALESCE(selected_at, '9999-12-31') ASC, votes DESC, title ASC"
+            """
+            SELECT
+                papers.*,
+                COALESCE(AVG(votes.priority_level), 0) AS priority_score,
+                COUNT(votes.id) AS priority_votes,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 1 THEN 1 ELSE 0 END), 0) AS priority_count_1,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 2 THEN 1 ELSE 0 END), 0) AS priority_count_2,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 3 THEN 1 ELSE 0 END), 0) AS priority_count_3,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 4 THEN 1 ELSE 0 END), 0) AS priority_count_4,
+                MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority
+            FROM papers
+            LEFT JOIN votes ON votes.paper_id = papers.id
+            GROUP BY papers.id
+            ORDER BY priority_score DESC, papers.created_at ASC, papers.title ASC
+            """,
+            (user_id,),
         )
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+    return _decorate_papers(rows)
 
 
-def _normalize_selected_date(selected_date: str | None) -> str:
-    if selected_date:
-        try:
-            return date.fromisoformat(selected_date).isoformat()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Select a valid date")
-    return date.today().isoformat()
-
-
-def _selected_papers(papers: Iterable[sqlite3.Row]) -> list[sqlite3.Row]:
-    selected = [paper for paper in papers if paper["selected"]]
-    return sorted(
-        selected,
-        key=lambda paper: paper["selected_at"] or "9999-12-31",
-    )
+def _decorate_papers(rows: list[sqlite3.Row]) -> list[dict]:
+    decorated = []
+    for row in rows:
+        paper = dict(row)
+        score = float(paper["priority_score"] or 0)
+        votes = int(paper["priority_votes"] or 0)
+        paper["priority_score"] = score
+        paper["priority_votes"] = votes
+        paper["priority_label"] = _priority_label(score)
+        paper["priority_score_display"] = f"{score:.1f}" if votes else "—"
+        histogram = []
+        for bucket_id, bucket_label, bucket_color in PRIORITY_BUCKETS:
+            count = int(paper.get(f"priority_count_{bucket_id}") or 0)
+            percent = round(count * 100 / votes, 1) if votes else 0
+            histogram.append(
+                {
+                    "label": bucket_label,
+                    "count": count,
+                    "percent": min(percent, 100),
+                    "bar_class": bucket_color,
+                }
+            )
+        paper["priority_histogram"] = histogram
+        user_priority = paper.get("user_priority")
+        paper["user_priority"] = int(user_priority) if user_priority else None
+        paper["user_priority_label"] = (
+            PRIORITY_LABELS[paper["user_priority"]]
+            if paper["user_priority"]
+            else None
+        )
+        decorated.append(paper)
+    return decorated
 
 
 def _get_user_from_token(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row | None:
@@ -166,18 +240,15 @@ def _current_user(request: Request) -> sqlite3.Row | None:
 
 
 def _build_context(request: Request) -> dict:
-    papers = _fetch_papers()
-    selected = _selected_papers(papers)
-    backlog = sorted(
-        [paper for paper in papers if not paper["selected"]],
-        key=lambda paper: (-(paper["votes"] or 0), paper["title"]),
-    )
     user = _current_user(request)
+    papers = _fetch_papers(user["id"] if user else None)
+    queue_papers = papers[:QUEUE_SIZE]
+    backlog_papers = papers[QUEUE_SIZE:]
     return {
         "request": request,
         "papers": papers,
-        "selected_papers": selected,
-        "backlog_papers": backlog,
+        "queue_papers": queue_papers,
+        "backlog_papers": backlog_papers,
         "user": user,
     }
 
@@ -260,7 +331,9 @@ def register_paper(
 
 
 @app.post("/papers/{paper_id}/vote")
-def vote_on_paper(paper_id: int, request: Request):
+def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
+    if priority not in PRIORITY_LEVELS:
+        raise HTTPException(status_code=400, detail="Select a valid priority")
     with _connect() as conn:
         user = _get_user_from_token(conn, request.cookies.get(SESSION_COOKIE))
         if not user:
@@ -268,14 +341,16 @@ def vote_on_paper(paper_id: int, request: Request):
         paper = conn.execute("SELECT id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
-        try:
-            conn.execute(
-                "INSERT INTO votes (user_id, paper_id) VALUES (?, ?)",
-                (user["id"], paper_id),
-            )
-        except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="You already voted for this paper")
-        conn.execute("UPDATE papers SET votes = votes + 1 WHERE id = ?", (paper_id,))
+        conn.execute(
+            """
+            INSERT INTO votes (user_id, paper_id, priority_level)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, paper_id) DO UPDATE SET
+                priority_level = excluded.priority_level,
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (user["id"], paper_id, priority),
+        )
         conn.commit()
 
     return _hx_or_redirect(
@@ -283,39 +358,6 @@ def vote_on_paper(paper_id: int, request: Request):
         template_name="partials/candidates.html",
         redirect_path="/vote",
     )
-
-
-@app.post("/papers/{paper_id}/select")
-def select_paper(
-    paper_id: int,
-    request: Request,
-    selected_date: str | None = Form(None),
-):
-    with _connect() as conn:
-        selected_at = _normalize_selected_date(selected_date)
-        result = conn.execute(
-            "UPDATE papers SET selected = 1, selected_at = ? WHERE id = ?",
-            (selected_at, paper_id),
-        )
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Paper not found")
-        conn.commit()
-
-    return _hx_or_redirect(request)
-
-
-@app.post("/papers/{paper_id}/unselect")
-def unselect_paper(paper_id: int, request: Request):
-    with _connect() as conn:
-        result = conn.execute(
-            "UPDATE papers SET selected = 0, selected_at = NULL WHERE id = ?",
-            (paper_id,),
-        )
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Paper not found")
-        conn.commit()
-
-    return _hx_or_redirect(request)
 
 
 @app.post("/users/register")

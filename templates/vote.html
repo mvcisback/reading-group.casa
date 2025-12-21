@@ -2,8 +2,8 @@
 
 {% block content %}
   <section class="text-center space-y-1">
-    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Voting</p>
-    <h2 class="text-3xl font-semibold text-white">Choose the next read</h2>
+    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Prioritize</p>
+    <h2 class="text-3xl font-semibold text-white">Adjust the queue</h2>
   </section>
   <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
     <article
@@ -21,10 +21,10 @@
           <button type="submit" class="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:bg-slate-600">Log out</button>
         </form>
       {% else %}
-        <a data-view-transition href="/login" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Sign in to vote</a>
+        <a data-view-transition href="/login" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400">Sign in to prioritize</a>
       {% endif %}
       <p class="mt-4 text-xs text-slate-500">
-        Back to the <a data-view-transition href="/" class="text-slate-200 underline">schedule</a>.
+        Back to the <a data-view-transition href="/" class="text-slate-200 underline">queue</a>.
       </p>
     </section>
   </section>
