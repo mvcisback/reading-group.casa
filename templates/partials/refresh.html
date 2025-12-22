@@ -12,6 +12,16 @@
         <span>Avg {{ next_paper.priority_score_display }}</span>
         <span>{{ next_paper.priority_votes }} votes</span>
       </div>
+      <div class="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+        {% if next_paper.assigned_reader_username %}
+          <span class="text-slate-300">Presenter: <span class="font-semibold text-white">{{ next_paper.assigned_reader_username }}</span></span>
+          {% if next_paper.ready_to_present %}
+            <span class="rounded-full border border-emerald-500 bg-emerald-500/20 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">Ready to present</span>
+          {% endif %}
+        {% else %}
+          <span class="text-slate-400">Presenter not assigned yet.</span>
+        {% endif %}
+      </div>
       {% if next_paper.paper_url %}
         <a href="{{ next_paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
       {% endif %}
@@ -37,6 +47,54 @@
               <span>Avg {{ paper.priority_score_display }}</span>
               <span>{{ paper.priority_votes }} votes</span>
             </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              {% if paper.assigned_reader_username %}
+                <span class="text-slate-300">Presenter: <span class="font-semibold text-white">{{ paper.assigned_reader_username }}</span></span>
+                {% if paper.ready_to_present %}
+                  <span class="rounded-full border border-emerald-500 bg-emerald-500/20 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">Ready to present</span>
+                {% endif %}
+              {% else %}
+                <span class="text-slate-400">Presenter not assigned yet.</span>
+              {% endif %}
+            </div>
+            {% if user and (paper.assigned_reader_id == user.id or not paper.assigned_reader_id) %}
+              {% set action_base = "rounded-2xl border px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] transition focus:outline-none" %}
+              {% set assign_button = action_base ~ " border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-600 hover:bg-slate-700" %}
+              {% set ready_button = action_base ~ " border-emerald-500 bg-emerald-500/20 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-500/30" %}
+              {% set release_button = action_base ~ " border-rose-500 bg-rose-500/10 text-rose-100 hover:border-rose-400 hover:bg-rose-500/20" %}
+              <div class="mt-3 flex flex-wrap gap-2">
+                {% if paper.assigned_reader_id == user.id %}
+                  <form method="post" action="/papers/{{ paper.id }}/unassign" hx-post="/papers/{{ paper.id }}/unassign" hx-target="#papers-panel" hx-swap="innerHTML">
+                    <input type="hidden" name="panel" value="refresh" />
+                    <button type="submit" class="{{ release_button }}">
+                      Release reader
+                    </button>
+                  </form>
+                  {% if paper.ready_to_present %}
+                    <form method="post" action="/papers/{{ paper.id }}/mark-not-ready" hx-post="/papers/{{ paper.id }}/mark-not-ready" hx-target="#papers-panel" hx-swap="innerHTML">
+                      <input type="hidden" name="panel" value="refresh" />
+                      <button type="submit" class="{{ ready_button }}">
+                        Mark not ready
+                      </button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="/papers/{{ paper.id }}/mark-ready" hx-post="/papers/{{ paper.id }}/mark-ready" hx-target="#papers-panel" hx-swap="innerHTML">
+                      <input type="hidden" name="panel" value="refresh" />
+                      <button type="submit" class="{{ ready_button }}">
+                        Mark ready
+                      </button>
+                    </form>
+                  {% endif %}
+                {% elif not paper.assigned_reader_id %}
+                  <form method="post" action="/papers/{{ paper.id }}/assign" hx-post="/papers/{{ paper.id }}/assign" hx-target="#papers-panel" hx-swap="innerHTML">
+                    <input type="hidden" name="panel" value="refresh" />
+                    <button type="submit" class="{{ assign_button }}">
+                      Assign myself
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endif %}
             {% if paper.paper_url %}
               <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
             {% endif %}

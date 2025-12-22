@@ -84,6 +84,56 @@
                   </div>
                 {% endfor %}
               </details>
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center gap-2 text-sm">
+                  {% if paper.assigned_reader_username %}
+                    <span class="text-slate-300">Assigned reader: <span class="font-semibold text-white">{{ paper.assigned_reader_username }}</span></span>
+                    {% if paper.ready_to_present %}
+                      <span class="rounded-full border border-emerald-500 bg-emerald-500/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">Ready to present</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-slate-400">No reader assigned yet.</span>
+                  {% endif %}
+                </div>
+                {% if paper.assigned_reader_id == user.id or not paper.assigned_reader_id %}
+                  {% set action_base = "rounded-2xl border px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] transition focus:outline-none" %}
+                  {% set assign_button = action_base ~ " border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-600 hover:bg-slate-700" %}
+                  {% set ready_button = action_base ~ " border-emerald-500 bg-emerald-500/20 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-500/30" %}
+                  {% set release_button = action_base ~ " border-rose-500 bg-rose-500/10 text-rose-100 hover:border-rose-400 hover:bg-rose-500/20" %}
+                  <div class="flex flex-wrap gap-2">
+                    {% if paper.assigned_reader_id == user.id %}
+                      <form method="post" action="/papers/{{ paper.id }}/unassign" hx-post="/papers/{{ paper.id }}/unassign" hx-target="#candidates-panel" hx-swap="innerHTML">
+                        <input type="hidden" name="panel" value="candidates" />
+                        <button type="submit" class="{{ release_button }}">
+                          Release reader
+                        </button>
+                      </form>
+                      {% if paper.ready_to_present %}
+                        <form method="post" action="/papers/{{ paper.id }}/mark-not-ready" hx-post="/papers/{{ paper.id }}/mark-not-ready" hx-target="#candidates-panel" hx-swap="innerHTML">
+                          <input type="hidden" name="panel" value="candidates" />
+                          <button type="submit" class="{{ ready_button }}">
+                            Mark not ready
+                          </button>
+                        </form>
+                      {% else %}
+                        <form method="post" action="/papers/{{ paper.id }}/mark-ready" hx-post="/papers/{{ paper.id }}/mark-ready" hx-target="#candidates-panel" hx-swap="innerHTML">
+                          <input type="hidden" name="panel" value="candidates" />
+                          <button type="submit" class="{{ ready_button }}">
+                            Mark ready
+                          </button>
+                        </form>
+                      {% endif %}
+                    {% else %}
+                      <form method="post" action="/papers/{{ paper.id }}/assign" hx-post="/papers/{{ paper.id }}/assign" hx-target="#candidates-panel" hx-swap="innerHTML">
+                        <input type="hidden" name="panel" value="candidates" />
+                        <button type="submit" class="{{ assign_button }}">
+                          Assign myself
+                        </button>
+                      </form>
+                    {% endif %}
+                  </div>
+                {% endif %}
+              </div>
             </div>
           {% else %}
             <div class="mt-4">

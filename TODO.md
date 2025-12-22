@@ -1,5 +1,2 @@
 - [ ] RSS feed of selected papers.
-- [ ] Schedule paper on certain date.
 - [ ] Support optional preview images.
-- [x] Support deleting and archiving papers.
-- [ ] Support adding a presenter (volunteer or assigned) to paper and give priority to papers with presenters.

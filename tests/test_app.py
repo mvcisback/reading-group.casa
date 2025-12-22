@@ -3,7 +3,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from main import app
+from main import (
+    app,
+    ASSIGNED_READER_PRIORITY_BONUS,
+    READY_TO_PRESENT_PRIORITY_BONUS,
+    SESSION_COOKIE,
+)
 
 
 def test_home_renders_queue_and_management_links(tmp_path: Path) -> None:
@@ -89,6 +94,104 @@ def test_priority_queue_orders_by_priority_and_age(tmp_path: Path) -> None:
         ).fetchall()
 
     assert [row["title"] for row in rows] == ["Paper C", "Paper A", "Paper B"]
+
+
+def test_assign_reader_requires_login(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.cookies.clear()
+        response = client.post("/papers/1/assign")
+
+    assert response.status_code == 401
+
+
+def test_only_assigned_reader_can_toggle_readiness(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.post("/papers/1/assign", data={"panel": "refresh"})
+        first_cookie = client.cookies.get(SESSION_COOKIE)
+        client.post(
+            "/users/register",
+            data={"username": "other", "password": "securepass"},
+        )
+        response = client.post("/papers/1/mark-ready")
+        assert response.status_code == 403
+        client.cookies.set(SESSION_COOKIE, first_cookie)
+        ready_response = client.post("/papers/1/mark-ready", data={"panel": "refresh"})
+        assert ready_response.status_code == 200
+        with sqlite3.connect(app.state.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT ready_to_present FROM papers WHERE id = 1").fetchone()
+        assert row["ready_to_present"] == 1
+        not_ready_response = client.post("/papers/1/mark-not-ready", data={"panel": "refresh"})
+        assert not_ready_response.status_code == 200
+
+    with sqlite3.connect(app.state.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT ready_to_present FROM papers WHERE id = 1").fetchone()
+    assert row["ready_to_present"] == 0
+
+
+def test_assigned_reader_updates_priority_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.post("/papers", data={"title": "Paper B"})
+        client.post("/papers/2/assign", data={"panel": "refresh"})
+        rows_before = _fetch_priority_rows(app.state.db_path)
+        assert rows_before[0]["id"] == 2
+        assert rows_before[0]["priority_sort_score"] == ASSIGNED_READER_PRIORITY_BONUS
+        client.post("/papers/2/mark-ready", data={"panel": "refresh"})
+        rows_after = _fetch_priority_rows(app.state.db_path)
+        assert rows_after[0]["priority_sort_score"] == ASSIGNED_READER_PRIORITY_BONUS + READY_TO_PRESENT_PRIORITY_BONUS
+
+    with sqlite3.connect(app.state.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT ready_to_present FROM papers WHERE id = 2").fetchone()
+    assert row["ready_to_present"] == 1
+
+
+def _fetch_priority_rows(db_path: str) -> list[sqlite3.Row]:
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        return conn.execute(
+            """
+            SELECT
+                papers.id,
+                COALESCE(AVG(votes.priority_level), 0)
+                + CASE WHEN papers.assigned_reader_id IS NOT NULL THEN ? ELSE 0 END
+                + CASE WHEN papers.ready_to_present = 1 THEN ? ELSE 0 END AS priority_sort_score
+            FROM papers
+            LEFT JOIN votes ON votes.paper_id = papers.id
+            WHERE papers.archived = 0
+            GROUP BY papers.id
+            ORDER BY priority_sort_score DESC, papers.created_at ASC, papers.title ASC
+            """,
+            (
+                ASSIGNED_READER_PRIORITY_BONUS,
+                READY_TO_PRESENT_PRIORITY_BONUS,
+            ),
+        ).fetchall()
 
 
 def test_authenticated_user_can_archive_and_unarchive_paper(tmp_path: Path) -> None:

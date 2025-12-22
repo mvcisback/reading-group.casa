@@ -33,6 +33,23 @@
             {% endif %}
             {% if user %}
               <div class="mt-4 flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-[0.3em] text-slate-400">
+                {% if paper.assigned_reader_id == user.id %}
+                  <form
+                    method="post"
+                    action="/papers/{{ paper.id }}/unassign"
+                    hx-post="/papers/{{ paper.id }}/unassign"
+                    hx-target="#housekeeping-panel"
+                    hx-swap="innerHTML"
+                  >
+                    <input type="hidden" name="panel" value="housekeeping" />
+                    <button
+                      type="submit"
+                      class="rounded-2xl border border-rose-500 bg-rose-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-rose-100 transition hover:border-rose-400 hover:bg-rose-500/20"
+                    >
+                      Release reader
+                    </button>
+                  </form>
+                {% endif %}
                 <form
                   method="post"
                   action="/papers/{{ paper.id }}/archive"
@@ -92,6 +109,23 @@
             {% endif %}
             {% if user %}
               <div class="mt-4 flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-[0.3em] text-slate-400">
+                {% if paper.assigned_reader_id == user.id %}
+                  <form
+                    method="post"
+                    action="/papers/{{ paper.id }}/unassign"
+                    hx-post="/papers/{{ paper.id }}/unassign"
+                    hx-target="#housekeeping-panel"
+                    hx-swap="innerHTML"
+                  >
+                    <input type="hidden" name="panel" value="housekeeping" />
+                    <button
+                      type="submit"
+                      class="rounded-2xl border border-rose-500 bg-rose-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-rose-100 transition hover:border-rose-400 hover:bg-rose-500/20"
+                    >
+                      Release reader
+                    </button>
+                  </form>
+                {% endif %}
                 <form
                   method="post"
                   action="/papers/{{ paper.id }}/archive"

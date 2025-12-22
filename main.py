@@ -28,6 +28,8 @@ PRIORITY_BUCKETS = [
     (4, "Critical", "bg-rose-500"),
 ]
 QUEUE_SIZE = 3
+ASSIGNED_READER_PRIORITY_BONUS = 0.5
+READY_TO_PRESENT_PRIORITY_BONUS = 1.0
 
 
 cli = typer.Typer(invoke_without_command=True)
@@ -67,14 +69,17 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             paper_url TEXT,
             archived INTEGER NOT NULL DEFAULT 0,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            assigned_reader_id INTEGER,
+            ready_to_present INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(assigned_reader_id) REFERENCES users(id) ON DELETE SET NULL
         )
         """
     )
 
 
 def _ensure_papers_table(conn: sqlite3.Connection) -> None:
-    desired_columns = {"id", "title", "paper_url", "created_at", "archived"}
+    desired_columns = {"id", "title", "paper_url", "created_at", "archived", "assigned_reader_id", "ready_to_present"}
     exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
     ).fetchone()
@@ -89,8 +94,8 @@ def _ensure_papers_table(conn: sqlite3.Connection) -> None:
         _create_papers_table(conn)
         conn.execute(
             """
-            INSERT INTO papers (id, title, paper_url, archived, created_at)
-            SELECT id, title, paper_url, 0, created_at FROM papers_old
+            INSERT INTO papers (id, title, paper_url, archived, created_at, assigned_reader_id, ready_to_present)
+            SELECT id, title, paper_url, 0, created_at, NULL, 0 FROM papers_old
             """
         )
         conn.execute("DROP TABLE papers_old")
@@ -158,42 +163,30 @@ def _ensure_sessions_table(conn: sqlite3.Connection) -> None:
 
 def _init_db() -> None:
     with _connect() as conn:
-        _ensure_papers_table(conn)
         _ensure_users_table(conn)
+        _ensure_papers_table(conn)
         _ensure_votes_table(conn)
         _ensure_sessions_table(conn)
         conn.commit()
 
 
 def _fetch_papers(user_id: int | None) -> list[dict]:
-    with _connect() as conn:
-        cursor = conn.execute(
-            """
-            SELECT
-                papers.*,
-                COALESCE(AVG(votes.priority_level), 0) AS priority_score,
-                COUNT(votes.id) AS priority_votes,
-                COALESCE(SUM(CASE WHEN votes.priority_level = 1 THEN 1 ELSE 0 END), 0) AS priority_count_1,
-                COALESCE(SUM(CASE WHEN votes.priority_level = 2 THEN 1 ELSE 0 END), 0) AS priority_count_2,
-                COALESCE(SUM(CASE WHEN votes.priority_level = 3 THEN 1 ELSE 0 END), 0) AS priority_count_3,
-                COALESCE(SUM(CASE WHEN votes.priority_level = 4 THEN 1 ELSE 0 END), 0) AS priority_count_4,
-                MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority
-            FROM papers
-            LEFT JOIN votes ON votes.paper_id = papers.id
-            WHERE papers.archived = 0
-            GROUP BY papers.id
-            ORDER BY priority_score DESC, papers.created_at ASC, papers.title ASC
-            """,
-            (user_id,),
-        )
-        rows = cursor.fetchall()
-    return _decorate_papers(rows)
+    return _fetch_papers_by_archive(user_id, archived=0)
 
 
 def _fetch_archived_papers(user_id: int | None) -> list[dict]:
+    return _fetch_papers_by_archive(user_id, archived=1)
+
+
+def _fetch_papers_by_archive(user_id: int | None, archived: int) -> list[dict]:
+    priority_sort_score_expr = (
+        "COALESCE(AVG(votes.priority_level), 0)"
+        f" + CASE WHEN papers.assigned_reader_id IS NOT NULL THEN {ASSIGNED_READER_PRIORITY_BONUS} ELSE 0 END"
+        f" + CASE WHEN papers.ready_to_present = 1 THEN {READY_TO_PRESENT_PRIORITY_BONUS} ELSE 0 END"
+    )
     with _connect() as conn:
         cursor = conn.execute(
-            """
+            f"""
             SELECT
                 papers.*,
                 COALESCE(AVG(votes.priority_level), 0) AS priority_score,
@@ -202,14 +195,17 @@ def _fetch_archived_papers(user_id: int | None) -> list[dict]:
                 COALESCE(SUM(CASE WHEN votes.priority_level = 2 THEN 1 ELSE 0 END), 0) AS priority_count_2,
                 COALESCE(SUM(CASE WHEN votes.priority_level = 3 THEN 1 ELSE 0 END), 0) AS priority_count_3,
                 COALESCE(SUM(CASE WHEN votes.priority_level = 4 THEN 1 ELSE 0 END), 0) AS priority_count_4,
-                MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority
+                MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority,
+                MAX(assigned_reader.username) AS assigned_reader_username,
+                {priority_sort_score_expr} AS priority_sort_score
             FROM papers
             LEFT JOIN votes ON votes.paper_id = papers.id
-            WHERE papers.archived = 1
+            LEFT JOIN users AS assigned_reader ON assigned_reader.id = papers.assigned_reader_id
+            WHERE papers.archived = ?
             GROUP BY papers.id
-            ORDER BY priority_score DESC, papers.created_at ASC, papers.title ASC
+            ORDER BY priority_sort_score DESC, papers.created_at ASC, papers.title ASC
             """,
-            (user_id,),
+            (user_id, archived),
         )
         rows = cursor.fetchall()
     return _decorate_papers(rows)
@@ -225,6 +221,10 @@ def _decorate_papers(rows: list[sqlite3.Row]) -> list[dict]:
         paper["priority_votes"] = votes
         paper["priority_label"] = _priority_label(score)
         paper["priority_score_display"] = f"{score:.1f}" if votes else "—"
+        assigned_reader_id = paper.get("assigned_reader_id")
+        paper["assigned_reader_id"] = int(assigned_reader_id) if assigned_reader_id is not None else None
+        paper["assigned_reader_username"] = paper.get("assigned_reader_username")
+        paper["ready_to_present"] = bool(paper.get("ready_to_present"))
         histogram = []
         for bucket_id, bucket_label, bucket_color in PRIORITY_BUCKETS:
             count = int(paper.get(f"priority_count_{bucket_id}") or 0)
@@ -303,6 +303,14 @@ def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.htm
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(template_name, _build_context(request))
     return RedirectResponse(redirect_path, status_code=303)
+
+
+def _panel_template(panel: str | None = None) -> tuple[str, str]:
+    if panel == "candidates":
+        return "partials/candidates.html", "/vote"
+    if panel == "housekeeping":
+        return "partials/housekeeping-panel.html", "/housekeeping"
+    return "partials/refresh.html", "/"
 
 
 def _hash_password(password: str) -> str:
@@ -435,6 +443,84 @@ def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
         template_name="partials/candidates.html",
         redirect_path="/vote",
     )
+
+
+@app.post("/papers/{paper_id}/assign")
+def assign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+    template_name, redirect_path = _panel_template(panel)
+    with _connect() as conn:
+        user = _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT id, assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        assigned_reader_id = paper["assigned_reader_id"]
+        if assigned_reader_id and assigned_reader_id != user["id"]:
+            raise HTTPException(status_code=400, detail="Paper already has a reader assigned")
+        conn.execute(
+            "UPDATE papers SET assigned_reader_id = ?, ready_to_present = 0 WHERE id = ?",
+            (user["id"], paper_id),
+        )
+        conn.commit()
+    return _hx_or_redirect(request, template_name, redirect_path)
+
+
+@app.post("/papers/{paper_id}/unassign")
+def unassign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+    template_name, redirect_path = _panel_template(panel)
+    with _connect() as conn:
+        user = _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        assigned_reader_id = paper["assigned_reader_id"]
+        if not assigned_reader_id:
+            raise HTTPException(status_code=400, detail="Paper has no assigned reader")
+        if assigned_reader_id != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the assigned reader can release this paper")
+        conn.execute(
+            "UPDATE papers SET assigned_reader_id = NULL, ready_to_present = 0 WHERE id = ?",
+            (paper_id,),
+        )
+        conn.commit()
+    return _hx_or_redirect(request, template_name, redirect_path)
+
+
+@app.post("/papers/{paper_id}/mark-ready")
+def mark_paper_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+    template_name, redirect_path = _panel_template(panel)
+    with _connect() as conn:
+        user = _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        assigned_reader_id = paper["assigned_reader_id"]
+        if assigned_reader_id != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
+        conn.execute(
+            "UPDATE papers SET ready_to_present = 1 WHERE id = ?",
+            (paper_id,),
+        )
+        conn.commit()
+    return _hx_or_redirect(request, template_name, redirect_path)
+
+
+@app.post("/papers/{paper_id}/mark-not-ready")
+def mark_paper_not_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+    template_name, redirect_path = _panel_template(panel)
+    with _connect() as conn:
+        user = _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        assigned_reader_id = paper["assigned_reader_id"]
+        if assigned_reader_id != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
+        conn.execute(
+            "UPDATE papers SET ready_to_present = 0 WHERE id = ?",
+            (paper_id,),
+        )
+        conn.commit()
+    return _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/archive")
