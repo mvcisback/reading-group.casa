@@ -66,6 +66,7 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             paper_url TEXT,
+            archived INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -73,7 +74,7 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_papers_table(conn: sqlite3.Connection) -> None:
-    desired_columns = {"id", "title", "paper_url", "created_at"}
+    desired_columns = {"id", "title", "paper_url", "created_at", "archived"}
     exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
     ).fetchone()
@@ -88,8 +89,8 @@ def _ensure_papers_table(conn: sqlite3.Connection) -> None:
         _create_papers_table(conn)
         conn.execute(
             """
-            INSERT INTO papers (id, title, paper_url, created_at)
-            SELECT id, title, paper_url, COALESCE(selected_at, DATETIME('now')) FROM papers_old
+            INSERT INTO papers (id, title, paper_url, archived, created_at)
+            SELECT id, title, paper_url, 0, created_at FROM papers_old
             """
         )
         conn.execute("DROP TABLE papers_old")
@@ -179,6 +180,32 @@ def _fetch_papers(user_id: int | None) -> list[dict]:
                 MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority
             FROM papers
             LEFT JOIN votes ON votes.paper_id = papers.id
+            WHERE papers.archived = 0
+            GROUP BY papers.id
+            ORDER BY priority_score DESC, papers.created_at ASC, papers.title ASC
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall()
+    return _decorate_papers(rows)
+
+
+def _fetch_archived_papers(user_id: int | None) -> list[dict]:
+    with _connect() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                papers.*,
+                COALESCE(AVG(votes.priority_level), 0) AS priority_score,
+                COUNT(votes.id) AS priority_votes,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 1 THEN 1 ELSE 0 END), 0) AS priority_count_1,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 2 THEN 1 ELSE 0 END), 0) AS priority_count_2,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 3 THEN 1 ELSE 0 END), 0) AS priority_count_3,
+                COALESCE(SUM(CASE WHEN votes.priority_level = 4 THEN 1 ELSE 0 END), 0) AS priority_count_4,
+                MAX(CASE WHEN votes.user_id = ? THEN votes.priority_level END) AS user_priority
+            FROM papers
+            LEFT JOIN votes ON votes.paper_id = papers.id
+            WHERE papers.archived = 1
             GROUP BY papers.id
             ORDER BY priority_score DESC, papers.created_at ASC, papers.title ASC
             """,
@@ -244,16 +271,26 @@ def _current_user(request: Request) -> sqlite3.Row | None:
         return _get_user_from_token(conn, token)
 
 
+def _require_authenticated_user(request: Request, conn: sqlite3.Connection) -> sqlite3.Row:
+    user = _get_user_from_token(conn, request.cookies.get(SESSION_COOKIE))
+    if not user:
+        raise HTTPException(status_code=401, detail="Log in to manage papers")
+    return user
+
+
 def _build_context(request: Request) -> dict:
     user = _current_user(request)
-    papers = _fetch_papers(user["id"] if user else None)
+    user_id = user["id"] if user else None
+    papers = _fetch_papers(user_id)
     queue_papers = papers[:QUEUE_SIZE]
     backlog_papers = papers[QUEUE_SIZE:]
+    archived_papers = _fetch_archived_papers(user_id)
     return {
         "request": request,
         "papers": papers,
         "queue_papers": queue_papers,
         "backlog_papers": backlog_papers,
+        "archived_papers": archived_papers,
         "user": user,
     }
 
@@ -363,6 +400,45 @@ def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
         template_name="partials/candidates.html",
         redirect_path="/vote",
     )
+
+
+@app.post("/papers/{paper_id}/archive")
+def archive_paper(paper_id: int, request: Request):
+    with _connect() as conn:
+        _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        if paper["archived"]:
+            raise HTTPException(status_code=400, detail="Paper already archived")
+        conn.execute("UPDATE papers SET archived = 1 WHERE id = ?", (paper_id,))
+        conn.commit()
+    return _hx_or_redirect(request)
+
+
+@app.post("/papers/{paper_id}/unarchive")
+def unarchive_paper(paper_id: int, request: Request):
+    with _connect() as conn:
+        _require_authenticated_user(request, conn)
+        result = conn.execute(
+            "UPDATE papers SET archived = 0 WHERE id = ? AND archived = 1",
+            (paper_id,),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        conn.commit()
+    return _hx_or_redirect(request)
+
+
+@app.post("/papers/{paper_id}/delete")
+def delete_paper(paper_id: int, request: Request):
+    with _connect() as conn:
+        _require_authenticated_user(request, conn)
+        result = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        conn.commit()
+    return _hx_or_redirect(request)
 
 
 @app.post("/users/register")

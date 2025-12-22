@@ -86,6 +86,36 @@
                   </div>
                 {% endfor %}
               </div>
+              <div class="mt-4 flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-[0.3em] text-slate-400">
+                <form
+                  method="post"
+                  action="/papers/{{ paper.id }}/archive"
+                  hx-post="/papers/{{ paper.id }}/archive"
+                  hx-target="#candidates-panel"
+                  hx-swap="innerHTML"
+                >
+                  <button
+                    type="submit"
+                    class="rounded-2xl border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300 transition hover:border-slate-600 hover:bg-slate-700"
+                  >
+                    Archive
+                  </button>
+                </form>
+                <form
+                  method="post"
+                  action="/papers/{{ paper.id }}/delete"
+                  hx-post="/papers/{{ paper.id }}/delete"
+                  hx-target="#candidates-panel"
+                  hx-swap="innerHTML"
+                >
+                  <button
+                    type="submit"
+                    class="rounded-2xl border border-rose-600 bg-rose-600/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-rose-200 transition hover:border-rose-500 hover:bg-rose-500/20"
+                  >
+                    Delete
+                  </button>
+                </form>
+              </div>
             </div>
           {% else %}
             <div class="mt-4">
