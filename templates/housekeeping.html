@@ -1,11 +1,6 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="text-center space-y-1">
-    <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Housekeeping</p>
-    <h2 class="text-3xl font-semibold text-white">Manage archived papers</h2>
-  </section>
-  <section class="mt-6">
     <article
       id="housekeeping-panel"
       class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
@@ -14,5 +9,4 @@
     >
       {% include "partials/housekeeping-panel.html" %}
     </article>
-  </section>
 {% endblock %}
