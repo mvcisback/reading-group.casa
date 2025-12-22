@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
-    <article
+  <article
       id="papers-panel"
-      class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
       hx-target="this"
       hx-swap="innerHTML"
     >
       {% include "partials/refresh.html" %}
-    </article>
-  </section>
+  </article>
 {% endblock %}

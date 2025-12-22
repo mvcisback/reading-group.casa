@@ -1,28 +1,50 @@
-<section aria-label="Upcoming reading" class="mb-6 rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+<section aria-label="Upcoming reading">
   <header class="mb-3">
-    <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Queue</p>
-    <h2 class="text-2xl font-semibold text-white">Next reads</h2>
+    <h1 class="text-xs uppercase tracking-[0.5em] text-slate-500">Next Paper</h3>
   </header>
-  {% if queue_papers %}
-    <div class="space-y-4">
-      {% for paper in queue_papers %}
-        <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-xl font-semibold text-white">{{ paper.title }}</p>
-            <span class="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">{{ paper.priority_label }} priority</span>
-          </div>
-          <div class="mt-3 flex flex-wrap gap-3 text-sm text-slate-400">
-            <span>Avg {{ paper.priority_score_display }}</span>
-            <span>{{ paper.priority_votes }} votes</span>
-          </div>
-          {% if paper.paper_url %}
-            <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
-          {% endif %}
-        </article>
-      {% endfor %}
-    </div>
+  {% if next_paper %}
+    <article class="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-2xl font-semibold text-white">{{ next_paper.title }}</p>
+        <span class="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">{{ next_paper.priority_label }} priority</span>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-3 text-sm text-slate-400">
+        <span>Avg {{ next_paper.priority_score_display }}</span>
+        <span>{{ next_paper.priority_votes }} votes</span>
+      </div>
+      {% if next_paper.paper_url %}
+        <a href="{{ next_paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
+      {% endif %}
+    </article>
   {% else %}
-    <p class="text-sm text-slate-400">The queue is empty. Nominate something fresh to get a read moving.</p>
+    <p class="text-sm text-slate-400">No paper is scheduled yet. Nominate something fresh to get a read moving.</p>
   {% endif %}
 </section>
-
+<section>
+  <div class="mt-6">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xs uppercase tracking-[0.5em] text-slate-500">Upcoming</h3>
+    </div>
+    {% if queue_papers %}
+      <div class="mt-4 space-y-4">
+        {% for paper in queue_papers %}
+          <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <p class="text-lg font-semibold text-white">{{ paper.title }}</p>
+              <span class="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">{{ paper.priority_label }} priority</span>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-3 text-sm text-slate-400">
+              <span>Avg {{ paper.priority_score_display }}</span>
+              <span>{{ paper.priority_votes }} votes</span>
+            </div>
+            {% if paper.paper_url %}
+              <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-4 text-sm text-slate-400">The queue is empty. Nominate something fresh to get a read moving.</p>
+    {% endif %}
+  </div>
+</section>

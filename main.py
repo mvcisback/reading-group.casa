@@ -282,12 +282,16 @@ def _build_context(request: Request) -> dict:
     user = _current_user(request)
     user_id = user["id"] if user else None
     papers = _fetch_papers(user_id)
-    queue_papers = papers[:QUEUE_SIZE]
-    backlog_papers = papers[QUEUE_SIZE:]
+    queue_candidates = papers[:QUEUE_SIZE + 1]
+    next_paper, queue_papers = None, []
+    if queue_candidates:
+        next_paper, *queue_papers = queue_candidates
+    backlog_papers = papers[QUEUE_SIZE + 1:]
     archived_papers = _fetch_archived_papers(user_id)
     return {
         "request": request,
         "papers": papers,
+        "next_paper": next_paper,
         "queue_papers": queue_papers,
         "backlog_papers": backlog_papers,
         "archived_papers": archived_papers,
