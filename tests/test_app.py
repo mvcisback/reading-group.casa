@@ -221,6 +221,64 @@ def test_authenticated_user_can_archive_and_unarchive_paper(tmp_path: Path) -> N
         assert row["archived"] == 0
 
 
+def test_authenticated_user_can_mark_paper_covered(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.post("/papers/1/assign", data={"panel": "refresh"})
+        covered_response = client.post("/papers/1/mark-covered", headers={"HX-Request": "true"})
+        assert covered_response.status_code == 200
+
+    with sqlite3.connect(app.state.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT archived, covered, assigned_reader_id, ready_to_present FROM papers WHERE id = 1"
+        ).fetchone()
+
+    assert row["archived"] == 1
+    assert row["covered"] == 1
+    assert row["assigned_reader_id"] is None
+    assert row["ready_to_present"] == 0
+
+
+def test_mark_paper_covered_requires_login(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.cookies.clear()
+        response = client.post("/papers/1/mark-covered")
+
+    assert response.status_code == 401
+
+
+def test_mark_paper_covered_rejects_archived(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Paper A"})
+        client.post("/papers/1/archive")
+        response = client.post("/papers/1/mark-covered")
+
+    assert response.status_code == 400
+
+
 def test_archive_requires_login(tmp_path: Path) -> None:
     db_path = tmp_path / "reading_group.db"
     app.state.db_path = str(db_path)

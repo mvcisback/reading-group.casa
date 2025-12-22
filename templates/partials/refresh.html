@@ -25,6 +25,14 @@
       {% if next_paper.paper_url %}
         <a href="{{ next_paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
       {% endif %}
+      {% if user %}
+        <form method="post" action="/papers/{{ next_paper.id }}/mark-covered" hx-post="/papers/{{ next_paper.id }}/mark-covered" hx-target="#papers-panel" hx-swap="innerHTML">
+          <input type="hidden" name="panel" value="refresh" />
+          <button type="submit" class="mt-3 inline-flex rounded-full border border-emerald-500 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-500/20">
+            Mark covered
+          </button>
+        </form>
+      {% endif %}
     </article>
   {% else %}
     <p class="text-sm text-slate-400">No paper is scheduled yet. Nominate something fresh to get a read moving.</p>
@@ -105,4 +113,32 @@
       <p class="mt-4 text-sm text-slate-400">The queue is empty. Nominate something fresh to get a read moving.</p>
     {% endif %}
   </div>
+</section>
+<section aria-label="Covered papers" class="mt-8 space-y-4">
+  <div class="flex items-center justify-between">
+    <h4 class="text-lg font-semibold text-white">Covered papers</h4>
+    <span class="text-xs uppercase tracking-[0.4em] text-slate-500">History</span>
+  </div>
+  {% if covered_papers %}
+    <div class="space-y-4">
+      {% for paper in covered_papers %}
+        <article class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-lg font-semibold text-white">{{ paper.title }}</p>
+            <span class="rounded-full border border-emerald-500 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">Covered</span>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-sm text-slate-400">
+            <span>Avg {{ paper.priority_score_display }}</span>
+            <span>{{ paper.priority_votes }} votes</span>
+            <span class="text-slate-500">{{ paper.priority_label }} priority</span>
+          </div>
+          {% if paper.paper_url %}
+            <a href="{{ paper.paper_url }}" target="_blank" rel="noreferrer" class="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-sm text-slate-300 transition hover:bg-slate-800">View paper</a>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-sm text-slate-400">No papers have been covered yet. Mark a read as covered to add it to the list.</p>
+  {% endif %}
 </section>

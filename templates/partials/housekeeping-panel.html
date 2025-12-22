@@ -66,6 +66,21 @@
                 </form>
                 <form
                   method="post"
+                  action="/papers/{{ paper.id }}/mark-covered"
+                  hx-post="/papers/{{ paper.id }}/mark-covered"
+                  hx-target="#housekeeping-panel"
+                  hx-swap="innerHTML"
+                >
+                  <input type="hidden" name="panel" value="housekeeping" />
+                  <button
+                    type="submit"
+                    class="rounded-2xl border border-emerald-500 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-500/20"
+                  >
+                    Mark covered
+                  </button>
+                </form>
+                <form
+                  method="post"
                   action="/papers/{{ paper.id }}/delete"
                   hx-post="/papers/{{ paper.id }}/delete"
                   hx-target="#housekeeping-panel"
@@ -138,6 +153,21 @@
                     class="rounded-2xl border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-700"
                   >
                     Archive
+                  </button>
+                </form>
+                <form
+                  method="post"
+                  action="/papers/{{ paper.id }}/mark-covered"
+                  hx-post="/papers/{{ paper.id }}/mark-covered"
+                  hx-target="#housekeeping-panel"
+                  hx-swap="innerHTML"
+                >
+                  <input type="hidden" name="panel" value="housekeeping" />
+                  <button
+                    type="submit"
+                    class="rounded-2xl border border-emerald-500 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-500/20"
+                  >
+                    Mark covered
                   </button>
                 </form>
                 <form

@@ -69,6 +69,7 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             paper_url TEXT,
             archived INTEGER NOT NULL DEFAULT 0,
+            covered INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             assigned_reader_id INTEGER,
             ready_to_present INTEGER NOT NULL DEFAULT 0,
@@ -79,7 +80,7 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_papers_table(conn: sqlite3.Connection) -> None:
-    desired_columns = {"id", "title", "paper_url", "created_at", "archived", "assigned_reader_id", "ready_to_present"}
+    desired_columns = {"id", "title", "paper_url", "created_at", "archived", "covered", "assigned_reader_id", "ready_to_present"}
     exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
     ).fetchone()
@@ -94,8 +95,8 @@ def _ensure_papers_table(conn: sqlite3.Connection) -> None:
         _create_papers_table(conn)
         conn.execute(
             """
-            INSERT INTO papers (id, title, paper_url, archived, created_at, assigned_reader_id, ready_to_present)
-            SELECT id, title, paper_url, 0, created_at, NULL, 0 FROM papers_old
+            INSERT INTO papers (id, title, paper_url, archived, covered, created_at, assigned_reader_id, ready_to_present)
+            SELECT id, title, paper_url, archived, 0, created_at, assigned_reader_id, ready_to_present FROM papers_old
             """
         )
         conn.execute("DROP TABLE papers_old")
@@ -178,12 +179,22 @@ def _fetch_archived_papers(user_id: int | None) -> list[dict]:
     return _fetch_papers_by_archive(user_id, archived=1)
 
 
-def _fetch_papers_by_archive(user_id: int | None, archived: int) -> list[dict]:
+def _fetch_covered_papers(user_id: int | None) -> list[dict]:
+    return _fetch_papers_by_archive(user_id, archived=1, covered=1)
+
+
+def _fetch_papers_by_archive(user_id: int | None, archived: int, covered: int | None = None) -> list[dict]:
     priority_sort_score_expr = (
         "COALESCE(AVG(votes.priority_level), 0)"
         f" + CASE WHEN papers.assigned_reader_id IS NOT NULL THEN {ASSIGNED_READER_PRIORITY_BONUS} ELSE 0 END"
         f" + CASE WHEN papers.ready_to_present = 1 THEN {READY_TO_PRESENT_PRIORITY_BONUS} ELSE 0 END"
     )
+    filters = ["papers.archived = ?"]
+    params = [archived]
+    if covered is not None:
+        filters.append("papers.covered = ?")
+        params.append(covered)
+    filter_clause = " AND ".join(filters)
     with _connect() as conn:
         cursor = conn.execute(
             f"""
@@ -201,11 +212,11 @@ def _fetch_papers_by_archive(user_id: int | None, archived: int) -> list[dict]:
             FROM papers
             LEFT JOIN votes ON votes.paper_id = papers.id
             LEFT JOIN users AS assigned_reader ON assigned_reader.id = papers.assigned_reader_id
-            WHERE papers.archived = ?
+            WHERE {filter_clause}
             GROUP BY papers.id
             ORDER BY priority_sort_score DESC, papers.created_at ASC, papers.title ASC
             """,
-            (user_id, archived),
+            (user_id, *params),
         )
         rows = cursor.fetchall()
     return _decorate_papers(rows)
@@ -288,6 +299,7 @@ def _build_context(request: Request) -> dict:
         next_paper, *queue_papers = queue_candidates
     backlog_papers = papers[QUEUE_SIZE + 1:]
     archived_papers = _fetch_archived_papers(user_id)
+    covered_papers = _fetch_covered_papers(user_id)
     return {
         "request": request,
         "papers": papers,
@@ -295,6 +307,7 @@ def _build_context(request: Request) -> dict:
         "queue_papers": queue_papers,
         "backlog_papers": backlog_papers,
         "archived_papers": archived_papers,
+        "covered_papers": covered_papers,
         "user": user,
     }
 
@@ -532,7 +545,7 @@ def archive_paper(paper_id: int, request: Request):
             raise HTTPException(status_code=404, detail="Paper not found")
         if paper["archived"]:
             raise HTTPException(status_code=400, detail="Paper already archived")
-        conn.execute("UPDATE papers SET archived = 1 WHERE id = ?", (paper_id,))
+        conn.execute("UPDATE papers SET archived = 1, covered = 0 WHERE id = ?", (paper_id,))
         conn.commit()
     return _hx_or_redirect(
         request,
@@ -541,12 +554,41 @@ def archive_paper(paper_id: int, request: Request):
     )
 
 
+@app.post("/papers/{paper_id}/mark-covered")
+def mark_paper_covered(paper_id: int, request: Request, panel: str = Form("refresh")):
+    template_name, redirect_path = _panel_template(panel)
+    with _connect() as conn:
+        _require_authenticated_user(request, conn)
+        paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        if paper["archived"]:
+            raise HTTPException(status_code=400, detail="Paper already archived")
+        conn.execute(
+            """
+            UPDATE papers
+            SET archived = 1,
+                covered = 1,
+                assigned_reader_id = NULL,
+                ready_to_present = 0
+            WHERE id = ?
+            """,
+            (paper_id,),
+        )
+        conn.commit()
+    return _hx_or_redirect(
+        request,
+        template_name=template_name,
+        redirect_path=redirect_path,
+    )
+
+
 @app.post("/papers/{paper_id}/unarchive")
 def unarchive_paper(paper_id: int, request: Request):
     with _connect() as conn:
         _require_authenticated_user(request, conn)
         result = conn.execute(
-            "UPDATE papers SET archived = 0 WHERE id = ? AND archived = 1",
+            "UPDATE papers SET archived = 0, covered = 0 WHERE id = ? AND archived = 1",
             (paper_id,),
         )
         if result.rowcount == 0:
