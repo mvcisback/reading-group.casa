@@ -344,7 +344,9 @@ def login_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/vote", response_class=HTMLResponse)
-def vote_page(request: Request) -> HTMLResponse:
+def vote_page(request: Request):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse("vote.html", _build_context(request))
 
 
@@ -354,12 +356,16 @@ def about_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/nominate", response_class=HTMLResponse)
-def nominate_page(request: Request) -> HTMLResponse:
+def nominate_page(request: Request):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse("nominate.html", _build_context(request))
 
 
 @app.get("/housekeeping", response_class=HTMLResponse)
-def housekeeping_page(request: Request) -> HTMLResponse:
+def housekeeping_page(request: Request):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse("housekeeping.html", _build_context(request))
 
 
@@ -374,6 +380,7 @@ def register_paper(
         raise HTTPException(status_code=400, detail="Paper title cannot be empty")
 
     with _connect() as conn:
+        _require_authenticated_user(request, conn)
         conn.execute(
             "INSERT INTO papers (title, paper_url) VALUES (?, ?)",
             (

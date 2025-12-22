@@ -65,13 +65,13 @@ def test_priority_queue_orders_by_priority_and_age(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        client.post("/papers", data={"title": "Paper A"})
-        client.post("/papers", data={"title": "Paper B"})
-        client.post("/papers", data={"title": "Paper C"})
         client.post(
             "/users/register",
             data={"username": "reader", "password": "securepass"},
         )
+        client.post("/papers", data={"title": "Paper A"})
+        client.post("/papers", data={"title": "Paper B"})
+        client.post("/papers", data={"title": "Paper C"})
         client.post("/papers/3/vote", data={"priority": 3})
         client.post("/papers/1/vote", data={"priority": 2})
         client.post("/papers/2/vote", data={"priority": 2})
@@ -123,7 +123,12 @@ def test_archive_requires_login(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
         client.post("/papers", data={"title": "Paper A"})
+        client.cookies.clear()
         response = client.post("/papers/1/archive")
 
     assert response.status_code == 401
@@ -171,7 +176,12 @@ def test_delete_requires_login(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
         client.post("/papers", data={"title": "Paper A"})
+        client.cookies.clear()
         response = client.post("/papers/1/delete")
 
     assert response.status_code == 401
@@ -182,10 +192,62 @@ def test_nominate_page_available(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
         response = client.get("/nominate")
 
     assert response.status_code == 200
     assert "Register a new paper" in response.text
+
+
+def test_nominate_page_redirects_when_logged_out(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/nominate", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_nominate_requires_login(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.post("/papers", data={"title": "Paper A"})
+
+    assert response.status_code == 401
+    assert "Log in to manage papers" in response.text
+
+
+def test_vote_page_redirects_when_logged_out(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/vote", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_vote_page_available_when_logged_in(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        response = client.get("/vote")
+
+    assert response.status_code == 200
+    assert "Adjust the queue" in response.text
 
 
 def test_housekeeping_page_available(tmp_path: Path) -> None:
@@ -193,7 +255,22 @@ def test_housekeeping_page_available(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
         response = client.get("/housekeeping")
 
     assert response.status_code == 200
     assert "Archive or delete papers" in response.text
+
+
+def test_housekeeping_page_redirects_when_logged_out(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/housekeeping", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
