@@ -333,6 +333,16 @@ def startup_event() -> None:
     _init_db()
 
 
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc: Exception):
+    detail = getattr(exc, "detail", None) or "The page you were looking for does not exist."
+    return templates.TemplateResponse(
+        "404.html",
+        {"request": request, "error_detail": detail},
+        status_code=404,
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def homepage(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", _build_context(request))

@@ -247,7 +247,7 @@ def test_vote_page_available_when_logged_in(tmp_path: Path) -> None:
         response = client.get("/vote")
 
     assert response.status_code == 200
-    assert "Adjust the queue" in response.text
+    assert "Assign each paper a priority to move it through the queue." in response.text
 
 
 def test_housekeeping_page_available(tmp_path: Path) -> None:
@@ -274,3 +274,15 @@ def test_housekeeping_page_redirects_when_logged_out(tmp_path: Path) -> None:
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
+
+
+def test_missing_page_renders_custom_404(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/definitely-missing")
+
+    assert response.status_code == 404
+    assert "Page not found" in response.text
+    assert "Return to queue" in response.text
