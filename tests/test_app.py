@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from main import app
 
 
-def test_home_renders_queue_and_nomination_form(tmp_path: Path) -> None:
+def test_home_renders_queue_and_management_links(tmp_path: Path) -> None:
     db_path = tmp_path / "reading_group.db"
     app.state.db_path = str(db_path)
 
@@ -15,8 +15,9 @@ def test_home_renders_queue_and_nomination_form(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "Queue" in response.text
-    assert "Priority queue" in response.text
-    assert "Register a paper" in response.text
+    assert "Nominate a paper" in response.text
+    assert "Housekeeping dashboard" in response.text
+    assert "Need to add or clean papers?" in response.text
 
 
 def test_authenticated_user_can_prioritize_multiple_papers(tmp_path: Path) -> None:
@@ -178,3 +179,25 @@ def test_delete_requires_login(tmp_path: Path) -> None:
         response = client.post("/papers/1/delete")
 
     assert response.status_code == 401
+
+
+def test_nominate_page_available(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/nominate")
+
+    assert response.status_code == 200
+    assert "Register a new paper" in response.text
+
+
+def test_housekeeping_page_available(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/housekeeping")
+
+    assert response.status_code == 200
+    assert "Archive or delete papers" in response.text

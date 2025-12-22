@@ -1,0 +1,37 @@
+<section aria-label="Register a paper">
+  <header class="mb-4">
+    <details>
+    <summary>Register a new paper</summary>
+    <p class="text-sm text-slate-400">Keep entries focused by submitting only the papers you want the group to consider next.</p>
+    </details>
+  </header>
+  <form action="/papers" method="post" hx-post="/papers" hx-target="#nominate-panel" hx-swap="innerHTML" class="flex flex-col gap-4">
+    <label class="text-sm text-slate-300">
+      <span class="mb-1 block font-semibold text-white">Title</span>
+      <input
+        name="title"
+        required
+        class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+        placeholder="Enter the paper title"
+      />
+    </label>
+    <label class="text-sm text-slate-300">
+      <span class="mb-1 block font-semibold text-white">Reference link</span>
+      <input
+        name="paper_url"
+        type="url"
+        class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+        placeholder="https://"
+      />
+    </label>
+    <button
+      type="submit"
+      class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-sky-400"
+    >
+      Submit paper
+    </button>
+  </form>
+  <p class="mt-4 text-xs text-slate-500">
+    View the <a data-view-transition href="/" class="text-slate-200 underline">queue</a> or handle voting on the <a data-view-transition href="/vote" class="text-slate-200 underline">prioritize</a> page.
+  </p>
+</section>

@@ -1,18 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="text-center space-y-1">
-    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Prioritize</p>
-    <h2 class="text-3xl font-semibold text-white">Adjust the queue</h2>
-  </section>
   <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
     <article
-      id="candidates-panel"
+      id="nominate-panel"
       class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
       hx-target="this"
       hx-swap="innerHTML"
     >
-      {% include "partials/candidates.html" %}
+      {% include "partials/nominate-panel.html" %}
     </article>
   </section>
 {% endblock %}

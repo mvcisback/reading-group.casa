@@ -2,17 +2,17 @@
 
 {% block content %}
   <section class="text-center space-y-1">
-    <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Prioritize</p>
-    <h2 class="text-3xl font-semibold text-white">Adjust the queue</h2>
+    <p class="text-xs uppercase tracking-[0.5em] text-slate-500">Housekeeping</p>
+    <h2 class="text-3xl font-semibold text-white">Manage archived papers</h2>
   </section>
-  <section class="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
+  <section class="mt-6">
     <article
-      id="candidates-panel"
+      id="housekeeping-panel"
       class="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
       hx-target="this"
       hx-swap="innerHTML"
     >
-      {% include "partials/candidates.html" %}
+      {% include "partials/housekeeping-panel.html" %}
     </article>
   </section>
 {% endblock %}

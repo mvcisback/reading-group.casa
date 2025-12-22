@@ -349,6 +349,16 @@ def about_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("about.html", _build_context(request))
 
 
+@app.get("/nominate", response_class=HTMLResponse)
+def nominate_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("nominate.html", _build_context(request))
+
+
+@app.get("/housekeeping", response_class=HTMLResponse)
+def housekeeping_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("housekeeping.html", _build_context(request))
+
+
 @app.post("/papers")
 def register_paper(
     request: Request,
@@ -369,7 +379,11 @@ def register_paper(
         )
         conn.commit()
 
-    return _hx_or_redirect(request)
+    return _hx_or_redirect(
+        request,
+        template_name="partials/nominate-panel.html",
+        redirect_path="/nominate",
+    )
 
 
 @app.post("/papers/{paper_id}/vote")
@@ -413,7 +427,11 @@ def archive_paper(paper_id: int, request: Request):
             raise HTTPException(status_code=400, detail="Paper already archived")
         conn.execute("UPDATE papers SET archived = 1 WHERE id = ?", (paper_id,))
         conn.commit()
-    return _hx_or_redirect(request)
+    return _hx_or_redirect(
+        request,
+        template_name="partials/housekeeping-panel.html",
+        redirect_path="/housekeeping",
+    )
 
 
 @app.post("/papers/{paper_id}/unarchive")
@@ -427,7 +445,11 @@ def unarchive_paper(paper_id: int, request: Request):
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
         conn.commit()
-    return _hx_or_redirect(request)
+    return _hx_or_redirect(
+        request,
+        template_name="partials/housekeeping-panel.html",
+        redirect_path="/housekeeping",
+    )
 
 
 @app.post("/papers/{paper_id}/delete")
@@ -438,7 +460,11 @@ def delete_paper(paper_id: int, request: Request):
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
         conn.commit()
-    return _hx_or_redirect(request)
+    return _hx_or_redirect(
+        request,
+        template_name="partials/housekeeping-panel.html",
+        redirect_path="/housekeeping",
+    )
 
 
 @app.post("/users/register")
