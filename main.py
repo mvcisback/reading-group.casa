@@ -294,9 +294,8 @@ def _build_context(request: Request) -> dict:
     user_id = user["id"] if user else None
     papers = _fetch_papers(user_id)
     queue_candidates = papers[:QUEUE_SIZE + 1]
-    next_paper, queue_papers = None, []
-    if queue_candidates:
-        next_paper, *queue_papers = queue_candidates
+    next_paper = queue_candidates[0] if queue_candidates else None
+    queue_papers = queue_candidates[1:] if queue_candidates else []
     backlog_papers = papers[QUEUE_SIZE + 1:]
     archived_papers = _fetch_archived_papers(user_id)
     covered_papers = _fetch_covered_papers(user_id)
@@ -305,6 +304,7 @@ def _build_context(request: Request) -> dict:
         "papers": papers,
         "next_paper": next_paper,
         "queue_papers": queue_papers,
+        "housekeeping_queue_papers": queue_candidates,
         "backlog_papers": backlog_papers,
         "archived_papers": archived_papers,
         "covered_papers": covered_papers,

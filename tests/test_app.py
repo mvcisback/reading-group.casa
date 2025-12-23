@@ -426,6 +426,23 @@ def test_housekeeping_page_available(tmp_path: Path) -> None:
     assert "Archive or delete papers" in response.text
 
 
+def test_housekeeping_queue_includes_next_paper(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        client.post("/papers", data={"title": "Upcoming Paper"})
+        response = client.get("/housekeeping")
+
+    assert response.status_code == 200
+    assert "Upcoming Paper" in response.text
+    assert "No papers are currently in the queue." not in response.text
+
+
 def test_housekeeping_page_redirects_when_logged_out(tmp_path: Path) -> None:
     db_path = tmp_path / "reading_group.db"
     app.state.db_path = str(db_path)
