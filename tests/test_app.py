@@ -24,6 +24,50 @@ def test_home_renders_queue_and_management_links(tmp_path: Path) -> None:
     assert response.status_code == 200
 
 
+def test_homepage_json_context(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/ui/?format=json")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "queue_papers" in data
+    assert "backlog_papers" in data
+    assert data["user"] is None
+    assert "request" not in data
+
+
+def test_vote_page_json_context_required_login_and_authenticated(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        login_response = client.post(
+            "/users/register",
+            data={"username": "reader", "password": "securepass"},
+        )
+        assert login_response.status_code == 200
+        response = client.get("/ui/vote", headers={"Accept": "application/json"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user"]["username"] == "reader"
+    assert "queue_papers" in data
+
+
+def test_vote_page_json_requires_login(tmp_path: Path) -> None:
+    db_path = tmp_path / "reading_group.db"
+    app.state.db_path = str(db_path)
+
+    with TestClient(app) as client:
+        response = client.get("/ui/vote", headers={"Accept": "application/json"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Log in to manage papers"
+
+
 def test_authenticated_user_can_prioritize_multiple_papers(tmp_path: Path) -> None:
     db_path = tmp_path / "reading_group.db"
     app.state.db_path = str(db_path)

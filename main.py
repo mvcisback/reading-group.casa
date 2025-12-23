@@ -470,9 +470,11 @@ def _decorate_papers(rows: list[sqlite3.Row]) -> list[dict]:
     return decorated
 
 
-def _build_context(request: Request) -> dict:
-    user = _current_user(request)
-    user_id = user["id"] if user else None
+def _build_context(request: Request, user_row: sqlite3.Row | None = None) -> dict:
+    if user_row is None:
+        user_row = _current_user(request)
+    user_id = user_row["id"] if user_row else None
+    user = dict(user_row) if user_row else None
     papers = _fetch_papers(user_id)
     queue_candidates = papers[:QUEUE_SIZE + 1]
     next_paper = queue_candidates[0] if queue_candidates else None
@@ -480,7 +482,7 @@ def _build_context(request: Request) -> dict:
     backlog_papers = papers[QUEUE_SIZE + 1:]
     archived_papers = _fetch_archived_papers(user_id)
     covered_papers = _fetch_covered_papers(user_id)
-    return {
+    context = {
         "request": request,
         "papers": papers,
         "next_paper": next_paper,
@@ -491,6 +493,30 @@ def _build_context(request: Request) -> dict:
         "covered_papers": covered_papers,
         "user": user,
     }
+    return context
+
+
+def _client_wants_json(request: Request) -> bool:
+    format_hint = request.query_params.get("format")
+    if format_hint:
+        return format_hint.lower() == "json"
+    accept_header = request.headers.get("Accept", "")
+    return "application/json" in accept_header.lower()
+
+
+def _context_without_request(context: dict) -> dict:
+    return {key: value for key, value in context.items() if key != "request"}
+
+
+def _render_template_or_json(
+    request: Request,
+    template_name: str,
+    user_row: sqlite3.Row | None = None,
+) -> Response:
+    context = _build_context(request, user_row)
+    if _client_wants_json(request):
+        return JSONResponse(_context_without_request(context))
+    return templates.TemplateResponse(template_name, context)
 
 
 def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = UI_ROOT):
@@ -541,39 +567,48 @@ def root_redirect() -> RedirectResponse:
     return RedirectResponse(UI_ROOT, status_code=303)
 
 @app.get(f"{UI_PREFIX}/", response_class=HTMLResponse)
-def homepage(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", _build_context(request))
+def homepage(request: Request) -> Response:
+    return _render_template_or_json(request, "index.html")
 
 
 @app.get(f"{UI_PREFIX}/login", response_class=HTMLResponse)
-def login_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("login.html", _build_context(request))
+def login_page(request: Request) -> Response:
+    return _render_template_or_json(request, "login.html")
 
 
 @app.get(f"{UI_PREFIX}/vote", response_class=HTMLResponse)
-def vote_page(request: Request):
-    if not _current_user(request):
+def vote_page(request: Request) -> Response:
+    user = _current_user(request)
+    if not user:
+        if _client_wants_json(request):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return templates.TemplateResponse("vote.html", _build_context(request))
+    return _render_template_or_json(request, "vote.html", user_row=user)
 
 
 @app.get(f"{UI_PREFIX}/about", response_class=HTMLResponse)
-def about_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("about.html", _build_context(request))
+def about_page(request: Request) -> Response:
+    return _render_template_or_json(request, "about.html")
 
 
 @app.get(f"{UI_PREFIX}/nominate", response_class=HTMLResponse)
-def nominate_page(request: Request):
-    if not _current_user(request):
+def nominate_page(request: Request) -> Response:
+    user = _current_user(request)
+    if not user:
+        if _client_wants_json(request):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return templates.TemplateResponse("nominate.html", _build_context(request))
+    return _render_template_or_json(request, "nominate.html", user_row=user)
 
 
 @app.get(f"{UI_PREFIX}/housekeeping", response_class=HTMLResponse)
-def housekeeping_page(request: Request):
-    if not _current_user(request):
+def housekeeping_page(request: Request) -> Response:
+    user = _current_user(request)
+    if not user:
+        if _client_wants_json(request):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return templates.TemplateResponse("housekeeping.html", _build_context(request))
+    return _render_template_or_json(request, "housekeeping.html", user_row=user)
 
 
 @app.post("/papers", summary="Nominate a paper")
