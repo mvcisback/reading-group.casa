@@ -1,6 +1,6 @@
 [project]
 name = "reading-group"
-version = "0.1.0"
+version = "1.0.0"
 description = "FastAPI + htmx app for coordinating a reading group."
 readme = "README.md"
 requires-python = ">=3.10,<4"
@@ -27,3 +27,11 @@ dev = [
     "pytest>=9.0.2",
     "python-multipart>=0.0.21",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
+major_version_zero = true

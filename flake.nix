@@ -57,6 +57,7 @@
           packages = [
             pkgs.uv
             pkgs.mermaid-cli
+            pkgs.commitizen
             venv
           ];
           shellHook = ''

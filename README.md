@@ -1,33 +1,44 @@
-# Reading Group
+# Reading Group 1.0
 
-Lightweight FastAPI + htmx application for nominating, voting on, and selecting papers for your reading group.
+Reading Group is a lightweight FastAPI + htmx application for nominating, voting on, and selecting papers with your study group.
+
+## Release 1.0 highlights
+- Stable priority queue ordering with per-paper aggregated vote tracking and scheduled selections.
+- Persistent state in SQLite with a small CLI wrapper (`main.py`) that exposes `--db-path`, `--host`, `--port`, and reload toggles for local experimentation.
+- HTMX-driven surface refreshes plus Tailwind (via CDN) keep the UI responsive while minimizing frontend complexity.
 
 ## Features
 - Register new papers along with optional reference links.
 - Create an account, log in, and vote once per paper so you can back every contender that matters to you.
 - Schedule multiple papers with dates so everyone knows which reads are coming up and can reschedule or unselect when plans change.
 - Highlight the scheduled selections and their reference links.
-- Frontend powered by htmx and styled with Tailwind via CDN.
+- Frontend powered by HTMX and styled with Tailwind via CDN.
 
 ## Getting Started
 ```bash
 pip install .
 uvicorn main:app --reload
 ```
-Use `python main.py` (or `python main.py --db-path /tmp/reading_group.db`) instead to start the bundled CLI, which exposes `--db-path`, `--host`, `--port`, and `--reload/--no-reload` flags.
+Alternatively, run `python main.py` (or `python main.py --db-path /tmp/reading_group.db`) to start the bundled CLI and control the SQLite path and network bindings directly.
 
 ## Running with Nix
 ```bash
 nix run
 ```
-This runs the Typer CLI inside `main.py` via the uv2nix-generated virtualenv. Pass CLI arguments after `--` if you need to override the database location or networking options, for example `nix run -- --db-path /tmp/reading_group.db`.
+This invokes the Typer CLI defined in `main.py` via the uv2nix-managed virtualenv. Pass CLI arguments after `--` (e.g., `nix run -- --db-path /tmp/reading_group.db`) when you need to override the database location or networking options.
 
 ## Database
-Data is stored in `reading_group.db` (SQLite) in the project root. The database is created automatically on first launch and does not require migrations yet.
+Data lives in `reading_group.db` (SQLite) in the project root. The schema is created automatically on first launch and there are no migrations yet.
 
 ## Testing
 ```bash
 nix develop --command bash -c "uv run pytest"
 ```
+Tests spin up FastAPI's `TestClient` after pointing `app.state.db_path` at a temporary file so the suite never mutates the real database.
 
-The existing test suite uses FastAPI's `TestClient` to verify that the home page renders successfully.
+## Recommended release steps
+- Confirm the changelog (or release notes) captures the 1.0 highlights and any breaking changes.
+- Run `cz bump` to determine the new version, update `pyproject.toml`, and refresh `uv.lock` (letting the tool touch affected lockfiles and dependencies).
+- Run `nix develop --command bash -c "uv run pytest"` to verify all suites still pass before tagging.
+- Tag the release (e.g., `v1.0.0`) and push the annotated tag to the remote.
+- Publish documentation or announcements so your community knows about the hardening achieved in 1.0.
