@@ -3,17 +3,26 @@ import hmac
 import os
 import secrets
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel, Field, field_validator
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
+from jose import JWTError, jwt
+from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 app = FastAPI(title="Reading Group Coordinator")
 templates = Jinja2Templates(directory="templates")
-SESSION_COOKIE = "reading_group_session"
 PRIORITY_LEVELS = {1, 2, 3, 4}
 PRIORITY_LABELS = {
     0: "Unranked",
@@ -32,6 +41,48 @@ QUEUE_SIZE = 3
 ASSIGNED_READER_PRIORITY_BONUS = 0.5
 READY_TO_PRESENT_PRIORITY_BONUS = 1.0
 
+SECRET_KEY = os.environ.get("READING_GROUP_SECRET_KEY", "insecure_default_change_me")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+PBKDF2_ITERATIONS = 600_000
+TOKEN_ISSUER = "reading_group"
+SESSION_COOKIE = "reading_group_session"
+SECURE_COOKIES = os.environ.get("READING_GROUP_SECURE_COOKIE", "0") == "1"
+ENFORCE_HTTPS = os.environ.get("READING_GROUP_ENFORCE_HTTPS", "0") == "1"
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver", "reading-group.example.com"]
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+if ENFORCE_HTTPS:
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("Permissions-Policy", "interest-cohort=()")
+        response.headers.setdefault("X-XSS-Protection", "0")
+        if ENFORCE_HTTPS:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": "Rate limit exceeded"},
+    )
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 class PaperNominationForm(BaseModel):
     title: str = Field(..., description="Title of the paper being nominated.")
@@ -87,6 +138,123 @@ class CredentialsForm(BaseModel):
 
 
 cli = typer.Typer(invoke_without_command=True)
+
+
+class TokenData(BaseModel):
+    username: str
+    typ: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RefreshTokenForm(BaseModel):
+    refresh_token: str = Field(..., description="Refresh token issued alongside the access token")
+
+
+def _create_token(username: str, token_type: str, expires_delta: timedelta) -> str:
+    now = datetime.utcnow()
+    payload = {
+        "sub": username,
+        "typ": token_type,
+        "iss": TOKEN_ISSUER,
+        "iat": now,
+        "exp": now + expires_delta,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _create_access_token(username: str) -> str:
+    return _create_token(username, "access", timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+
+
+def _create_refresh_token(username: str) -> str:
+    return _create_token(username, "refresh", timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+
+
+def _verify_token(token: str, expected_type: str) -> TokenData:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    if payload.get("typ") != expected_type:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    return TokenData(username=username, typ=expected_type)
+
+
+def _token_from_cookie(request: Request) -> str | None:
+    return request.cookies.get(SESSION_COOKIE)
+
+
+def _token_from_header(request: Request) -> str | None:
+    authorization = request.headers.get("Authorization")
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1]
+    return None
+
+
+def _extract_token_from_request(request: Request, token: str | None = None) -> str | None:
+    if token:
+        return token
+    return _token_from_header(request) or _token_from_cookie(request)
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="strict",
+        secure=SECURE_COOKIES,
+        max_age=int(ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+    )
+
+
+def _delete_session_cookies(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE)
+
+
+async def get_current_user(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+) -> sqlite3.Row:
+    actual_token = _extract_token_from_request(request, token)
+    if not actual_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
+    token_data = _verify_token(actual_token, "access")
+    with _connect() as conn:
+        user = _get_user_by_username(conn, token_data.username)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
+    return user
+
+
+def _get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT id, username FROM users WHERE username = ?", (username,)).fetchone()
+
+
+def _current_user(request: Request) -> sqlite3.Row | None:
+    token = _extract_token_from_request(request)
+    if not token:
+        return None
+    try:
+        token_data = _verify_token(token, "access")
+    except HTTPException:
+        return None
+    with _connect() as conn:
+        return _get_user_by_username(conn, token_data.username)
+
+
+def _token_response_for_user(username: str) -> TokenResponse:
+    access_token = _create_access_token(username)
+    refresh_token = _create_refresh_token(username)
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
 def _db_path() -> str:
@@ -203,25 +371,11 @@ def _ensure_votes_table(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE votes_old")
 
 
-def _ensure_sessions_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-            token TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-        """
-    )
-
-
 def _init_db() -> None:
     with _connect() as conn:
         _ensure_users_table(conn)
         _ensure_papers_table(conn)
         _ensure_votes_table(conn)
-        _ensure_sessions_table(conn)
         conn.commit()
 
 
@@ -314,35 +468,6 @@ def _decorate_papers(rows: list[sqlite3.Row]) -> list[dict]:
     return decorated
 
 
-def _get_user_from_token(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row | None:
-    if not token:
-        return None
-    return conn.execute(
-        """
-        SELECT users.id, users.username
-        FROM users
-        JOIN sessions ON sessions.user_id = users.id
-        WHERE sessions.token = ?
-        """,
-        (token,),
-    ).fetchone()
-
-
-def _current_user(request: Request) -> sqlite3.Row | None:
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        return None
-    with _connect() as conn:
-        return _get_user_from_token(conn, token)
-
-
-def _require_authenticated_user(request: Request, conn: sqlite3.Connection) -> sqlite3.Row:
-    user = _get_user_from_token(conn, request.cookies.get(SESSION_COOKIE))
-    if not user:
-        raise HTTPException(status_code=401, detail="Log in to manage papers")
-    return user
-
-
 def _build_context(request: Request) -> dict:
     user = _current_user(request)
     user_id = user["id"] if user else None
@@ -382,7 +507,7 @@ def _panel_template(panel: str | None = None) -> tuple[str, str]:
 
 def _hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
     return f"{salt.hex()}${key.hex()}"
 
 
@@ -390,17 +515,8 @@ def _verify_password(password: str, password_hash: str) -> bool:
     salt_hex, key_hex = password_hash.split("$", 1)
     salt = bytes.fromhex(salt_hex)
     key = bytes.fromhex(key_hex)
-    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
     return hmac.compare_digest(candidate, key)
-
-
-def _create_session(conn: sqlite3.Connection, user_id: int) -> str:
-    token = secrets.token_urlsafe(32)
-    conn.execute(
-        "INSERT INTO sessions (token, user_id) VALUES (?, ?)",
-        (token, user_id),
-    )
-    return token
 
 
 @app.on_event("startup")
@@ -458,6 +574,7 @@ def housekeeping_page(request: Request):
 def register_paper(
     request: Request,
     payload: PaperNominationForm = Depends(PaperNominationForm.as_form),
+    _current_user: sqlite3.Row = Depends(get_current_user),
 ):
     """
     Submit a new paper nomination for the reading queue.
@@ -467,7 +584,6 @@ def register_paper(
     """
 
     with _connect() as conn:
-        _require_authenticated_user(request, conn)
         conn.execute(
             "INSERT INTO papers (title, paper_url) VALUES (?, ?)",
             (
@@ -489,6 +605,7 @@ def vote_on_paper(
     paper_id: int,
     request: Request,
     payload: PriorityVoteForm = Depends(PriorityVoteForm.as_form),
+    _current_user: sqlite3.Row = Depends(get_current_user),
 ):
     """
     Cast or update the priority level for a paper.
@@ -498,9 +615,6 @@ def vote_on_paper(
     if payload.priority not in PRIORITY_LEVELS:
         raise HTTPException(status_code=400, detail="Select a valid priority")
     with _connect() as conn:
-        user = _get_user_from_token(conn, request.cookies.get(SESSION_COOKIE))
-        if not user:
-            raise HTTPException(status_code=401, detail="Log in to cast votes")
         paper = conn.execute("SELECT id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
@@ -512,7 +626,7 @@ def vote_on_paper(
                 priority_level = excluded.priority_level,
                 created_at = CURRENT_TIMESTAMP
             """,
-            (user["id"], paper_id, payload.priority),
+            (_current_user["id"], paper_id, payload.priority),
         )
         conn.commit()
 
@@ -524,42 +638,50 @@ def vote_on_paper(
 
 
 @app.post("/papers/{paper_id}/assign", summary="Assign a reader")
-def assign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+def assign_reader(
+    paper_id: int,
+    request: Request,
+    panel: str = Form("refresh"),
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Assign the authenticated user as the reader for the requested paper.
     """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
-        user = _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT id, assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
-        if assigned_reader_id and assigned_reader_id != user["id"]:
+        if assigned_reader_id and assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=400, detail="Paper already has a reader assigned")
         conn.execute(
             "UPDATE papers SET assigned_reader_id = ?, ready_to_present = 0 WHERE id = ?",
-            (user["id"], paper_id),
+            (_current_user["id"], paper_id),
         )
         conn.commit()
     return _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/unassign", summary="Unassign the reader")
-def unassign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+def unassign_reader(
+    paper_id: int,
+    request: Request,
+    panel: str = Form("refresh"),
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Release the authenticated reader from the assigned paper.
     """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
-        user = _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
         if not assigned_reader_id:
             raise HTTPException(status_code=400, detail="Paper has no assigned reader")
-        if assigned_reader_id != user["id"]:
+        if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can release this paper")
         conn.execute(
             "UPDATE papers SET assigned_reader_id = NULL, ready_to_present = 0 WHERE id = ?",
@@ -570,18 +692,22 @@ def unassign_reader(paper_id: int, request: Request, panel: str = Form("refresh"
 
 
 @app.post("/papers/{paper_id}/mark-ready", summary="Mark paper ready")
-def mark_paper_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+def mark_paper_ready(
+    paper_id: int,
+    request: Request,
+    panel: str = Form("refresh"),
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Flag the assigned paper as ready to present.
     """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
-        user = _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
-        if assigned_reader_id != user["id"]:
+        if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
         conn.execute(
             "UPDATE papers SET ready_to_present = 1 WHERE id = ?",
@@ -592,18 +718,22 @@ def mark_paper_ready(paper_id: int, request: Request, panel: str = Form("refresh
 
 
 @app.post("/papers/{paper_id}/mark-not-ready", summary="Mark paper not ready")
-def mark_paper_not_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+def mark_paper_not_ready(
+    paper_id: int,
+    request: Request,
+    panel: str = Form("refresh"),
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Mark the assigned paper as not ready to present.
     """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
-        user = _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
-        if assigned_reader_id != user["id"]:
+        if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
         conn.execute(
             "UPDATE papers SET ready_to_present = 0 WHERE id = ?",
@@ -614,12 +744,15 @@ def mark_paper_not_ready(paper_id: int, request: Request, panel: str = Form("ref
 
 
 @app.post("/papers/{paper_id}/archive", summary="Archive a paper")
-def archive_paper(paper_id: int, request: Request):
+def archive_paper(
+    paper_id: int,
+    request: Request,
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Archive a paper and clear any ready-to-present flag.
     """
     with _connect() as conn:
-        _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
@@ -635,13 +768,17 @@ def archive_paper(paper_id: int, request: Request):
 
 
 @app.post("/papers/{paper_id}/mark-covered", summary="Mark paper covered")
-def mark_paper_covered(paper_id: int, request: Request, panel: str = Form("refresh")):
+def mark_paper_covered(
+    paper_id: int,
+    request: Request,
+    panel: str = Form("refresh"),
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Mark and archive the paper as covered, removing any reader assignment.
     """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
-        _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
@@ -667,12 +804,15 @@ def mark_paper_covered(paper_id: int, request: Request, panel: str = Form("refre
 
 
 @app.post("/papers/{paper_id}/unarchive", summary="Restore a paper")
-def unarchive_paper(paper_id: int, request: Request):
+def unarchive_paper(
+    paper_id: int,
+    request: Request,
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Restore an archived paper to the active queue.
     """
     with _connect() as conn:
-        _require_authenticated_user(request, conn)
         result = conn.execute(
             "UPDATE papers SET archived = 0, covered = 0 WHERE id = ? AND archived = 1",
             (paper_id,),
@@ -688,12 +828,15 @@ def unarchive_paper(paper_id: int, request: Request):
 
 
 @app.post("/papers/{paper_id}/delete", summary="Delete a paper")
-def delete_paper(paper_id: int, request: Request):
+def delete_paper(
+    paper_id: int,
+    request: Request,
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
     """
     Permanently remove the paper from the backlog.
     """
     with _connect() as conn:
-        _require_authenticated_user(request, conn)
         result = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
@@ -706,12 +849,13 @@ def delete_paper(paper_id: int, request: Request):
 
 
 @app.post("/users/register", summary="Create a new user")
+@limiter.limit("30/minute")
 def register_user(
     request: Request,
     credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
     """
-    Register a new reader and issue an authenticated session.
+    Register a new reader and issue an authenticated access token.
 
     - **username**: Unique identifier for the reader account.
     - **password**: Secret used for future logins.
@@ -722,28 +866,28 @@ def register_user(
 
     with _connect() as conn:
         try:
-            cursor = conn.execute(
+            conn.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                 (normalized_username, _hash_password(credentials.password)),
             )
-            user_id = cursor.lastrowid
-            token = _create_session(conn, user_id)
             conn.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=400, detail="Username already taken")
 
+    tokens = _token_response_for_user(normalized_username)
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
+    _set_session_cookie(response, tokens.access_token)
     return response
 
 
 @app.post("/users/login", summary="Log in a user")
+@limiter.limit("5/minute")
 def login_user(
     request: Request,
     credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
     """
-    Authenticate a reader and return a session cookie.
+    Authenticate a reader and return an access token.
 
     - **username**: Registered username.
     - **password**: Password used during registration.
@@ -754,32 +898,52 @@ def login_user(
 
     with _connect() as conn:
         user = conn.execute(
-            "SELECT id, password_hash FROM users WHERE username = ?",
+            "SELECT username, password_hash FROM users WHERE username = ?",
             (normalized_username,),
         ).fetchone()
-        if not user or not _verify_password(credentials.password, user["password_hash"]):
-            raise HTTPException(status_code=400, detail="Invalid username or password")
-        token = _create_session(conn, user["id"])
-        conn.commit()
+    if not user or not _verify_password(credentials.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Invalid username or password")
 
+    tokens = _token_response_for_user(user["username"])
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
+    _set_session_cookie(response, tokens.access_token)
     return response
 
 
+@app.post("/token", response_model=TokenResponse, summary="Exchange credentials for tokens")
+@limiter.limit("10/minute")
+def exchange_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    username = form_data.username.strip()
+    if not username or not form_data.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+    with _connect() as conn:
+        user = conn.execute(
+            "SELECT username, password_hash FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    if not user or not _verify_password(form_data.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+    return _token_response_for_user(user["username"])
+
+
+@app.post("/token/refresh", response_model=TokenResponse, summary="Refresh an access token")
+@limiter.limit("10/minute")
+def refresh_access_token(request: Request, payload: RefreshTokenForm):
+    token_data = _verify_token(payload.refresh_token, "refresh")
+    with _connect() as conn:
+        user = _get_user_by_username(conn, token_data.username)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    return _token_response_for_user(user["username"])
+
+
 @app.post("/users/logout", summary="Log out")
-def logout_user(request: Request):
+def logout_user():
     """
     Clear the session cookie and log out the current reader.
     """
-    token = request.cookies.get(SESSION_COOKIE)
-    with _connect() as conn:
-        if token:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
-            conn.commit()
-
     response = RedirectResponse("/", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
+    _delete_session_cookies(response)
     return response
 
 
