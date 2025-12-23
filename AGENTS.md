@@ -41,6 +41,9 @@
 - Dependency management uses `uv` from the dev shell; edit `uv.lock` by running `nix develop --command bash -c "uv add --dev <package>"`, which also updates the virtual env automatically.
 - Use `nix develop --command bash -c "uv run pytest"` for all test runs so you exercise the `.venv` created by `uv`.
 
+## Commit conventions
+- Commits follow the conventional commit format via Commitizen (`cz_conventional_commits`) configured in `pyproject.toml`. Run `cz commit` inside `nix develop` (or `uv cz commit`) so messages stay aligned with that standard.
+
 ## Gotchas & notes
 - HTMX requests are detected via the `HX-Request` header. `_hx_or_redirect()` renders `templates/partials/refresh.html` for HTMX and issues a 303 redirect for standard submissions.
 - When adding new forms or buttons that should refresh live content, ensure they hit `/papers` or `/papers/{id}/vote` with the correct `hx-target`. If you accidentally return a full page for an HTMX request, the DOM swap will replace more than intended.

@@ -1,8 +1,8 @@
 flowchart TD
-    start([Start]) --> homepage[Visit Homepage]
+    start([Start]) --> homepage[Visit /ui/]
     
     homepage --> logged_in{"Logged in?"}
-    logged_in -->|No| login_page[Visit /login]
+    logged_in -->|No| login_page[Visit /ui/login]
     login_page --> login[POST /users/login]
     login_page --> register[POST /users/register]
     login --> homepage
@@ -10,15 +10,15 @@ flowchart TD
     
     logged_in -->|Yes| user_action{"User Action"}
     
-    user_action -->|Nominate paper| nominate[Visit /nominate]
+    user_action -->|Nominate paper| nominate[Visit /ui/nominate]
     nominate --> submit_paper[POST /papers]
     submit_paper --> homepage
     
-    user_action -->|Vote on paper| vote_page[Visit /vote]
+    user_action -->|Vote on paper| vote_page[Visit /ui/vote]
     vote_page --> cast_vote["POST /papers/{id}/vote"]
     cast_vote --> vote_page
     
-    user_action -->|Manage papers| housekeeping[Visit /housekeeping]
+    user_action -->|Manage papers| housekeeping[Visit /ui/housekeeping]
     
     housekeeping --> housekeeping_actions{"Housekeeping Action"}
     

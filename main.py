@@ -40,6 +40,8 @@ PRIORITY_BUCKETS = [
 QUEUE_SIZE = 3
 ASSIGNED_READER_PRIORITY_BONUS = 0.5
 READY_TO_PRESENT_PRIORITY_BONUS = 1.0
+UI_PREFIX = "/ui"
+UI_ROOT = f"{UI_PREFIX}/"
 
 SECRET_KEY = os.environ.get("READING_GROUP_SECRET_KEY", "insecure_default_change_me")
 ALGORITHM = "HS256"
@@ -491,7 +493,7 @@ def _build_context(request: Request) -> dict:
     }
 
 
-def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = "/"):
+def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = UI_ROOT):
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(template_name, _build_context(request))
     return RedirectResponse(redirect_path, status_code=303)
@@ -499,10 +501,10 @@ def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.htm
 
 def _panel_template(panel: str | None = None) -> tuple[str, str]:
     if panel == "candidates":
-        return "partials/candidates.html", "/vote"
+        return "partials/candidates.html", f"{UI_PREFIX}/vote"
     if panel == "housekeeping":
-        return "partials/housekeeping-panel.html", "/housekeeping"
-    return "partials/refresh.html", "/"
+        return "partials/housekeeping-panel.html", f"{UI_PREFIX}/housekeeping"
+    return "partials/refresh.html", UI_ROOT
 
 
 def _hash_password(password: str) -> str:
@@ -534,39 +536,43 @@ async def not_found_handler(request: Request, exc: Exception):
     )
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=RedirectResponse)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(UI_ROOT, status_code=303)
+
+@app.get(f"{UI_PREFIX}/", response_class=HTMLResponse)
 def homepage(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", _build_context(request))
 
 
-@app.get("/login", response_class=HTMLResponse)
+@app.get(f"{UI_PREFIX}/login", response_class=HTMLResponse)
 def login_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("login.html", _build_context(request))
 
 
-@app.get("/vote", response_class=HTMLResponse)
+@app.get(f"{UI_PREFIX}/vote", response_class=HTMLResponse)
 def vote_page(request: Request):
     if not _current_user(request):
-        return RedirectResponse("/login", status_code=303)
+        return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
     return templates.TemplateResponse("vote.html", _build_context(request))
 
 
-@app.get("/about", response_class=HTMLResponse)
+@app.get(f"{UI_PREFIX}/about", response_class=HTMLResponse)
 def about_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("about.html", _build_context(request))
 
 
-@app.get("/nominate", response_class=HTMLResponse)
+@app.get(f"{UI_PREFIX}/nominate", response_class=HTMLResponse)
 def nominate_page(request: Request):
     if not _current_user(request):
-        return RedirectResponse("/login", status_code=303)
+        return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
     return templates.TemplateResponse("nominate.html", _build_context(request))
 
 
-@app.get("/housekeeping", response_class=HTMLResponse)
+@app.get(f"{UI_PREFIX}/housekeeping", response_class=HTMLResponse)
 def housekeeping_page(request: Request):
     if not _current_user(request):
-        return RedirectResponse("/login", status_code=303)
+        return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
     return templates.TemplateResponse("housekeeping.html", _build_context(request))
 
 
@@ -596,7 +602,7 @@ def register_paper(
     return _hx_or_redirect(
         request,
         template_name="partials/nominate-panel.html",
-        redirect_path="/nominate",
+        redirect_path=f"{UI_PREFIX}/nominate",
     )
 
 
@@ -633,7 +639,7 @@ def vote_on_paper(
     return _hx_or_redirect(
         request,
         template_name="partials/candidates.html",
-        redirect_path="/vote",
+        redirect_path=f"{UI_PREFIX}/vote",
     )
 
 
@@ -763,7 +769,7 @@ def archive_paper(
     return _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
-        redirect_path="/housekeeping",
+        redirect_path=f"{UI_PREFIX}/housekeeping",
     )
 
 
@@ -823,7 +829,7 @@ def unarchive_paper(
     return _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
-        redirect_path="/housekeeping",
+        redirect_path=f"{UI_PREFIX}/housekeeping",
     )
 
 
@@ -844,7 +850,7 @@ def delete_paper(
     return _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
-        redirect_path="/housekeeping",
+        redirect_path=f"{UI_PREFIX}/housekeeping",
     )
 
 
@@ -875,7 +881,7 @@ def register_user(
             raise HTTPException(status_code=400, detail="Username already taken")
 
     tokens = _token_response_for_user(normalized_username)
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse(UI_ROOT, status_code=303)
     _set_session_cookie(response, tokens.access_token)
     return response
 
@@ -905,7 +911,7 @@ def login_user(
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
     tokens = _token_response_for_user(user["username"])
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse(UI_ROOT, status_code=303)
     _set_session_cookie(response, tokens.access_token)
     return response
 
@@ -942,7 +948,7 @@ def logout_user():
     """
     Clear the session cookie and log out the current reader.
     """
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse(UI_ROOT, status_code=303)
     _delete_session_cookies(response)
     return response
 
