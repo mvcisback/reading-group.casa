@@ -6,8 +6,9 @@ import sqlite3
 from pathlib import Path
 
 import typer
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field, field_validator
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Reading Group Coordinator")
@@ -30,6 +31,59 @@ PRIORITY_BUCKETS = [
 QUEUE_SIZE = 3
 ASSIGNED_READER_PRIORITY_BONUS = 0.5
 READY_TO_PRESENT_PRIORITY_BONUS = 1.0
+
+
+class PaperNominationForm(BaseModel):
+    title: str = Field(..., description="Title of the paper being nominated.")
+    paper_url: str | None = Field(None, description="Optional reference link for the paper.")
+
+    @field_validator("title")
+    def _normalize_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Paper title cannot be empty")
+        return cleaned
+
+    @field_validator("paper_url", mode="before")
+    def _normalize_url(cls, value: str | None) -> str | None:
+        if value:
+            trimmed = value.strip()
+            return trimmed or None
+        return None
+
+    @classmethod
+    def as_form(cls, title: str = Form(...), paper_url: str = Form("")) -> "PaperNominationForm":
+        return cls(title=title, paper_url=paper_url)
+
+
+class PriorityVoteForm(BaseModel):
+    priority: int = Field(..., description="Priority level (1=Low to 4=Critical).")
+
+    @classmethod
+    def as_form(cls, priority: int = Form(...)) -> "PriorityVoteForm":
+        return cls(priority=priority)
+
+
+class CredentialsForm(BaseModel):
+    username: str = Field(..., description="User name for authentication.")
+    password: str = Field(..., description="Password for authentication.")
+
+    @field_validator("username")
+    def _normalize_username(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Username and password are required")
+        return cleaned
+
+    @field_validator("password")
+    def _require_password(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Username and password are required")
+        return value
+
+    @classmethod
+    def as_form(cls, username: str = Form(...), password: str = Form(...)) -> "CredentialsForm":
+        return cls(username=username, password=password)
 
 
 cli = typer.Typer(invoke_without_command=True)
@@ -400,23 +454,25 @@ def housekeeping_page(request: Request):
     return templates.TemplateResponse("housekeeping.html", _build_context(request))
 
 
-@app.post("/papers")
+@app.post("/papers", summary="Nominate a paper")
 def register_paper(
     request: Request,
-    title: str = Form(...),
-    paper_url: str = Form(""),
+    payload: PaperNominationForm = Depends(PaperNominationForm.as_form),
 ):
-    normalized_title = title.strip()
-    if not normalized_title:
-        raise HTTPException(status_code=400, detail="Paper title cannot be empty")
+    """
+    Submit a new paper nomination for the reading queue.
+
+    - **title**: Non-empty title of the paper.
+    - **paper_url**: Optional reference link or DOI.
+    """
 
     with _connect() as conn:
         _require_authenticated_user(request, conn)
         conn.execute(
             "INSERT INTO papers (title, paper_url) VALUES (?, ?)",
             (
-                normalized_title,
-                paper_url.strip() or None,
+                payload.title,
+                payload.paper_url,
             ),
         )
         conn.commit()
@@ -428,9 +484,18 @@ def register_paper(
     )
 
 
-@app.post("/papers/{paper_id}/vote")
-def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
-    if priority not in PRIORITY_LEVELS:
+@app.post("/papers/{paper_id}/vote", summary="Set paper priority")
+def vote_on_paper(
+    paper_id: int,
+    request: Request,
+    payload: PriorityVoteForm = Depends(PriorityVoteForm.as_form),
+):
+    """
+    Cast or update the priority level for a paper.
+
+    - **priority**: Integer between 1 (Low) and 4 (Critical).
+    """
+    if payload.priority not in PRIORITY_LEVELS:
         raise HTTPException(status_code=400, detail="Select a valid priority")
     with _connect() as conn:
         user = _get_user_from_token(conn, request.cookies.get(SESSION_COOKIE))
@@ -447,7 +512,7 @@ def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
                 priority_level = excluded.priority_level,
                 created_at = CURRENT_TIMESTAMP
             """,
-            (user["id"], paper_id, priority),
+            (user["id"], paper_id, payload.priority),
         )
         conn.commit()
 
@@ -458,8 +523,11 @@ def vote_on_paper(paper_id: int, request: Request, priority: int = Form(...)):
     )
 
 
-@app.post("/papers/{paper_id}/assign")
+@app.post("/papers/{paper_id}/assign", summary="Assign a reader")
 def assign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+    """
+    Assign the authenticated user as the reader for the requested paper.
+    """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
         user = _require_authenticated_user(request, conn)
@@ -477,8 +545,11 @@ def assign_reader(paper_id: int, request: Request, panel: str = Form("refresh"))
     return _hx_or_redirect(request, template_name, redirect_path)
 
 
-@app.post("/papers/{paper_id}/unassign")
+@app.post("/papers/{paper_id}/unassign", summary="Unassign the reader")
 def unassign_reader(paper_id: int, request: Request, panel: str = Form("refresh")):
+    """
+    Release the authenticated reader from the assigned paper.
+    """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
         user = _require_authenticated_user(request, conn)
@@ -498,8 +569,11 @@ def unassign_reader(paper_id: int, request: Request, panel: str = Form("refresh"
     return _hx_or_redirect(request, template_name, redirect_path)
 
 
-@app.post("/papers/{paper_id}/mark-ready")
+@app.post("/papers/{paper_id}/mark-ready", summary="Mark paper ready")
 def mark_paper_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+    """
+    Flag the assigned paper as ready to present.
+    """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
         user = _require_authenticated_user(request, conn)
@@ -517,8 +591,11 @@ def mark_paper_ready(paper_id: int, request: Request, panel: str = Form("refresh
     return _hx_or_redirect(request, template_name, redirect_path)
 
 
-@app.post("/papers/{paper_id}/mark-not-ready")
+@app.post("/papers/{paper_id}/mark-not-ready", summary="Mark paper not ready")
 def mark_paper_not_ready(paper_id: int, request: Request, panel: str = Form("refresh")):
+    """
+    Mark the assigned paper as not ready to present.
+    """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
         user = _require_authenticated_user(request, conn)
@@ -536,8 +613,11 @@ def mark_paper_not_ready(paper_id: int, request: Request, panel: str = Form("ref
     return _hx_or_redirect(request, template_name, redirect_path)
 
 
-@app.post("/papers/{paper_id}/archive")
+@app.post("/papers/{paper_id}/archive", summary="Archive a paper")
 def archive_paper(paper_id: int, request: Request):
+    """
+    Archive a paper and clear any ready-to-present flag.
+    """
     with _connect() as conn:
         _require_authenticated_user(request, conn)
         paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
@@ -554,8 +634,11 @@ def archive_paper(paper_id: int, request: Request):
     )
 
 
-@app.post("/papers/{paper_id}/mark-covered")
+@app.post("/papers/{paper_id}/mark-covered", summary="Mark paper covered")
 def mark_paper_covered(paper_id: int, request: Request, panel: str = Form("refresh")):
+    """
+    Mark and archive the paper as covered, removing any reader assignment.
+    """
     template_name, redirect_path = _panel_template(panel)
     with _connect() as conn:
         _require_authenticated_user(request, conn)
@@ -583,8 +666,11 @@ def mark_paper_covered(paper_id: int, request: Request, panel: str = Form("refre
     )
 
 
-@app.post("/papers/{paper_id}/unarchive")
+@app.post("/papers/{paper_id}/unarchive", summary="Restore a paper")
 def unarchive_paper(paper_id: int, request: Request):
+    """
+    Restore an archived paper to the active queue.
+    """
     with _connect() as conn:
         _require_authenticated_user(request, conn)
         result = conn.execute(
@@ -601,8 +687,11 @@ def unarchive_paper(paper_id: int, request: Request):
     )
 
 
-@app.post("/papers/{paper_id}/delete")
+@app.post("/papers/{paper_id}/delete", summary="Delete a paper")
 def delete_paper(paper_id: int, request: Request):
+    """
+    Permanently remove the paper from the backlog.
+    """
     with _connect() as conn:
         _require_authenticated_user(request, conn)
         result = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
@@ -616,21 +705,26 @@ def delete_paper(paper_id: int, request: Request):
     )
 
 
-@app.post("/users/register")
+@app.post("/users/register", summary="Create a new user")
 def register_user(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
-    normalized_username = username.strip()
-    if not normalized_username or not password:
+    """
+    Register a new reader and issue an authenticated session.
+
+    - **username**: Unique identifier for the reader account.
+    - **password**: Secret used for future logins.
+    """
+    normalized_username = credentials.username
+    if not normalized_username or not credentials.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
     with _connect() as conn:
         try:
             cursor = conn.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (normalized_username, _hash_password(password)),
+                (normalized_username, _hash_password(credentials.password)),
             )
             user_id = cursor.lastrowid
             token = _create_session(conn, user_id)
@@ -643,14 +737,19 @@ def register_user(
     return response
 
 
-@app.post("/users/login")
+@app.post("/users/login", summary="Log in a user")
 def login_user(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
-    normalized_username = username.strip()
-    if not normalized_username or not password:
+    """
+    Authenticate a reader and return a session cookie.
+
+    - **username**: Registered username.
+    - **password**: Password used during registration.
+    """
+    normalized_username = credentials.username
+    if not normalized_username or not credentials.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
     with _connect() as conn:
@@ -658,7 +757,7 @@ def login_user(
             "SELECT id, password_hash FROM users WHERE username = ?",
             (normalized_username,),
         ).fetchone()
-        if not user or not _verify_password(password, user["password_hash"]):
+        if not user or not _verify_password(credentials.password, user["password_hash"]):
             raise HTTPException(status_code=400, detail="Invalid username or password")
         token = _create_session(conn, user["id"])
         conn.commit()
@@ -668,8 +767,11 @@ def login_user(
     return response
 
 
-@app.post("/users/logout")
+@app.post("/users/logout", summary="Log out")
 def logout_user(request: Request):
+    """
+    Clear the session cookie and log out the current reader.
+    """
     token = request.cookies.get(SESSION_COOKIE)
     with _connect() as conn:
         if token:
