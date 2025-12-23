@@ -1,0 +1,114 @@
+flowchart TD
+    client([Client Browser])
+    
+    client --> home
+    client --> login_page
+    client --> vote_page
+    client --> about
+    client --> nominate_page
+    client --> housekeeping
+    
+    subgraph "Authentication API"
+        login["/users/login (POST)"]
+        register["/users/register (POST)"]
+        logout["/users/logout (POST)"]
+    end
+
+    subgraph "Page Routes"
+        home["/
+        Shows paper queue"]
+        login_page["/login
+        Login form"]
+        vote_page["/vote
+        Priority voting interface"]
+        about["/about
+        Information page"]
+        nominate_page["/nominate
+        Paper nomination form"]
+        housekeeping["/housekeeping
+        Paper management interface"]
+    end
+    
+    subgraph "Paper Management API"
+        papers["POST /papers
+        Register new paper"]
+        vote["POST /papers/{id}/vote
+        Assign priority level"]
+        assign["POST /papers/{id}/assign
+        Become paper reader"]
+        unassign["POST /papers/{id}/unassign
+        Release assigned paper"]
+        ready["POST /papers/{id}/mark-ready
+        Mark ready to present"]
+        not_ready["POST /papers/{id}/mark-not-ready
+        Mark not ready"]
+        archive["POST /papers/{id}/archive
+        Archive paper"]
+        covered["POST /papers/{id}/mark-covered
+        Mark as covered"]
+        unarchive["POST /papers/{id}/unarchive
+        Restore from archive"]
+        delete["POST /papers/{id}/delete
+        Remove paper"]
+    end
+    
+    subgraph "Database"
+        db[(SQLite DB)]
+        papers_table[("papers table")]
+        users_table[("users table")]
+        votes_table[("votes table")]
+        sessions_table[("sessions table")]
+    end
+    
+    login_page --> login
+    login_page --> register
+    login --> db
+    register --> db
+    logout --> db
+    
+    home --> papers
+    vote_page --> vote
+    nominate_page --> papers
+    
+    papers --> db
+    vote --> db
+    assign --> db
+    unassign --> db
+    ready --> db
+    not_ready --> db
+    archive --> db
+    covered --> db
+    unarchive --> db
+    delete --> db
+    
+    db --> papers_table
+    db --> users_table
+    db --> votes_table
+    db --> sessions_table
+    
+    %% Auth flows
+    login --> |Set cookie| client
+    register --> |Set cookie| client
+    logout --> |Clear cookie| client
+    
+    %% HTMX refresh flows
+    papers --> |HTMX refresh| client
+    vote --> |HTMX refresh| client
+    assign --> |HTMX refresh| client
+    unassign --> |HTMX refresh| client
+    ready --> |HTMX refresh| client
+    not_ready --> |HTMX refresh| client
+    archive --> |HTMX refresh| client
+    covered --> |HTMX refresh| client
+    unarchive --> |HTMX refresh| client
+    delete --> |HTMX refresh| client
+
+    classDef get fill:#75b798,color:white;
+    classDef post fill:#ee9b00,color:white;
+    classDef db fill:#6c757d,color:white;
+    classDef client fill:#0d6efd,color:white;
+    
+    class home,login_page,vote_page,about,nominate_page,housekeeping get;
+    class login,register,logout,papers,vote,assign,unassign,ready,not_ready,archive,covered,unarchive,delete post;
+    class db,papers_table,users_table,votes_table,sessions_table db;
+    class client client;

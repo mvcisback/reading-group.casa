@@ -1,0 +1,43 @@
+flowchart TD
+    subgraph "Authentication"
+        login["/users/login (POST)"]
+        register["/users/register (POST)"]
+        logout["/users/logout (POST)"]
+    end
+
+    subgraph "Pages"
+        home["/"]
+        login_page["/login"]
+        vote_page["/vote"]
+        about["/about"]
+        nominate_page["/nominate"]
+        housekeeping["/housekeeping"]
+    end
+    
+    subgraph "Paper Management"
+        papers["/papers (POST)"]
+        vote["/papers/{id}/vote (POST)"]
+        assign["/papers/{id}/assign (POST)"]
+        unassign["/papers/{id}/unassign (POST)"]
+        ready["/papers/{id}/mark-ready (POST)"]
+        not_ready["/papers/{id}/mark-not-ready (POST)"]
+        archive["/papers/{id}/archive (POST)"]
+        covered["/papers/{id}/mark-covered (POST)"]
+        unarchive["/papers/{id}/unarchive (POST)"]
+        delete["/papers/{id}/delete (POST)"]
+    end
+
+    home --> papers
+    home --> vote
+    login_page --> login
+    login_page --> register
+    vote_page --> vote
+    nominate_page --> papers
+    housekeeping --> assign
+    housekeeping --> unassign
+    housekeeping --> ready
+    housekeeping --> not_ready
+    housekeeping --> archive
+    housekeeping --> covered
+    housekeeping --> unarchive
+    housekeeping --> delete

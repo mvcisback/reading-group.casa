@@ -1,0 +1,54 @@
+flowchart TD
+    start([Start]) --> homepage[Visit Homepage]
+    
+    homepage --> logged_in{"Logged in?"}
+    logged_in -->|No| login_page[Visit /login]
+    login_page --> login[POST /users/login]
+    login_page --> register[POST /users/register]
+    login --> homepage
+    register --> homepage
+    
+    logged_in -->|Yes| user_action{"User Action"}
+    
+    user_action -->|Nominate paper| nominate[Visit /nominate]
+    nominate --> submit_paper[POST /papers]
+    submit_paper --> homepage
+    
+    user_action -->|Vote on paper| vote_page[Visit /vote]
+    vote_page --> cast_vote["POST /papers/{id}/vote"]
+    cast_vote --> vote_page
+    
+    user_action -->|Manage papers| housekeeping[Visit /housekeeping]
+    
+    housekeeping --> housekeeping_actions{"Housekeeping Action"}
+    
+    housekeeping_actions -->|Assign self| assign["POST /papers/{id}/assign"]
+    housekeeping_actions -->|Unassign self| unassign["POST /papers/{id}/unassign"]
+    housekeeping_actions -->|Mark ready| ready["POST /papers/{id}/mark-ready"]
+    housekeeping_actions -->|Mark not ready| not_ready["POST /papers/{id}/mark-not-ready"]
+    housekeeping_actions -->|Archive| archive["POST /papers/{id}/archive"]
+    housekeeping_actions -->|Mark covered| covered["POST /papers/{id}/mark-covered"]
+    housekeeping_actions -->|Unarchive| unarchive["POST /papers/{id}/unarchive"]
+    housekeeping_actions -->|Delete| delete["POST /papers/{id}/delete"]
+    
+    assign --> housekeeping
+    unassign --> housekeeping
+    ready --> housekeeping
+    not_ready --> housekeeping
+    archive --> housekeeping
+    covered --> housekeeping
+    unarchive --> housekeeping
+    delete --> housekeeping
+    
+    user_action -->|Logout| logout[POST /users/logout]
+    logout --> homepage
+    
+    classDef page fill:#6495ED,color:white;
+    classDef action fill:#FF8C00,color:white;
+    classDef decision fill:#7CFC00,color:black;
+    classDef endpoint fill:#FF6347,color:white;
+    
+    class homepage,login_page,nominate,vote_page,housekeeping page;
+    class user_action,housekeeping_actions,logged_in decision;
+    class start action;
+    class submit_paper,cast_vote,assign,unassign,ready,not_ready,archive,covered,unarchive,delete,login,register,logout endpoint;

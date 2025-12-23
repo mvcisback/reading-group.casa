@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant User
+    participant Browser
+    participant FastAPIApp as FastAPI App (main.py)
+    participant SQLiteDB as SQLite Database (reading_group.db)
+
+    User->>Browser: Submit Form (e.g., vote, nominate paper)
+    Browser->>FastAPIApp: HTTP Request (POST /papers/{id}/vote or GET /papers)
+    activate FastAPIApp
+
+    alt HX-Request Header present (HTMX)
+        FastAPIApp-->>FastAPIApp: Process Request (e.g., store vote)
+        FastAPIApp-->>FastAPIApp: Call _fetch_papers()
+        FastAPIApp->>SQLiteDB: Read/Write Papers/Votes
+        activate SQLiteDB
+        SQLiteDB-->>FastAPIApp: Data
+        deactivate SQLiteDB
+        FastAPIApp-->>FastAPIApp: Render templates/partials/refresh.html
+        FastAPIApp-->>Browser: HTML Fragment (hx-target=#papers-panel)
+    else No HX-Request Header (Full Page)
+        FastAPIApp-->>FastAPIApp: Process Request
+        FastAPIApp-->>FastAPIApp: Call _fetch_papers()
+        FastAPIApp->>SQLiteDB: Read/Write Papers/Votes
+        activate SQLiteDB
+        SQLiteDB-->>FastAPIApp: Data
+        deactivate SQLiteDB
+        FastAPIApp-->>Browser: 303 Redirect
+    end
+    deactivate FastAPIApp
+    Browser->>Browser: Update UI

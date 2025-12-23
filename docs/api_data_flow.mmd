@@ -1,0 +1,95 @@
+flowchart TD
+    subgraph "Authentication API"
+        login["POST /users/login
+        Log in existing user"]
+        register["POST /users/register
+        Create new user account"]
+        logout["POST /users/logout
+        End user session"]
+    end
+    
+    subgraph "Paper Management API"
+        papers["POST /papers
+        Register new paper"]
+        vote["POST /papers/{id}/vote
+        Set priority (1-4)"]
+        assign["POST /papers/{id}/assign
+        Claim paper for reading"]
+        unassign["POST /papers/{id}/unassign
+        Release paper claim"]
+        ready["POST /papers/{id}/mark-ready
+        Ready to present"]
+        not_ready["POST /papers/{id}/mark-not-ready
+        Not ready to present"]
+        archive["POST /papers/{id}/archive
+        Move to archive"]
+        covered["POST /papers/{id}/mark-covered
+        Mark as presented"]
+        unarchive["POST /papers/{id}/unarchive
+        Return to active queue"]
+        delete["POST /papers/{id}/delete
+        Remove permanently"]
+    end
+    
+    subgraph "Database Schema" 
+        users[("users
+        - id
+        - username
+        - password_hash
+        - created_at")]
+        
+        papers_table[("papers
+        - id
+        - title
+        - paper_url
+        - archived
+        - covered
+        - created_at
+        - assigned_reader_id (FK->users)
+        - ready_to_present")]
+        
+        votes_table[("votes
+        - id
+        - user_id (FK->users)
+        - paper_id (FK->papers)
+        - priority_level
+        - created_at")]
+        
+        sessions[("sessions
+        - token
+        - user_id (FK->users)
+        - created_at")]
+    end
+    
+    %% Authentication relationships
+    login --> sessions
+    register --> users
+    register --> sessions
+    logout --> sessions
+    
+    %% Paper relationships
+    papers --> papers_table
+    vote --> votes_table
+    vote --> papers_table
+    assign --> papers_table
+    unassign --> papers_table
+    ready --> papers_table
+    not_ready --> papers_table
+    archive --> papers_table
+    covered --> papers_table
+    unarchive --> papers_table
+    delete --> papers_table
+    delete -.-> votes_table
+    
+    %% Database relationships
+    users --- sessions
+    users --- votes_table
+    users --- papers_table
+    papers_table --- votes_table
+    
+    %% Add styling
+    classDef api fill:#5bc0de,color:white;
+    classDef table fill:#f0ad4e,color:black;
+    
+    class login,register,logout,papers,vote,assign,unassign,ready,not_ready,archive,covered,unarchive,delete api;
+    class users,papers_table,votes_table,sessions table;
