@@ -691,6 +691,22 @@ def vote_on_paper(
     )
 
 
+@app.delete("/papers/{paper_id}/vote", summary="Clear a priority vote")
+def clear_priority_vote(
+    paper_id: int,
+    _current_user: sqlite3.Row = Depends(get_current_user),
+):
+    with _connect() as conn:
+        result = conn.execute(
+            "DELETE FROM votes WHERE paper_id = ? AND user_id = ?",
+            (paper_id, _current_user["id"]),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Vote not found")
+        conn.commit()
+    return JSONResponse({"detail": "Vote removed"})
+
+
 @app.post("/papers/{paper_id}/assign", summary="Assign a reader")
 def assign_reader(
     paper_id: int,

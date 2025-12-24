@@ -11,18 +11,12 @@ DEFAULT_SCHEME = "http"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 DEFAULT_SESSION_FILE = Path.home() / ".reading_group_cli" / "session.json"
-HOUSEKEEPING_ACTION_MAP = {
-    "assign": "assign",
-    "unassign": "unassign",
-    "ready": "mark-ready",
-    "not-ready": "mark-not-ready",
-    "archive": "archive",
-    "cover": "mark-covered",
-    "unarchive": "unarchive",
-    "delete": "delete",
+PRIORITY_LABEL_VALUES = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
 }
-PANEL_REQUIRED_ACTIONS = {"assign", "unassign", "ready", "not-ready", "cover"}
-
 
 def _resolve_base_url(base_url: str | None, scheme: str, host: str, port: int) -> str:
     if base_url:
@@ -99,8 +93,10 @@ async def _resolve_access_token(
     raise typer.Exit(code=1)
 
 
-async def _fetch_ui_context(ctx: typer.Context) -> dict[str, Any]:
+async def _fetch_ui_context(ctx: typer.Context, access_token: str | None = None) -> dict[str, Any]:
     headers = {"Accept": "application/json"}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
     async with httpx.AsyncClient(base_url=ctx.obj["base_url"], follow_redirects=True) as client:
         response = await client.get("/", params={"format": "json"}, headers=headers)
         try:
@@ -128,15 +124,42 @@ def _describe_paper(paper: dict[str, Any]) -> str:
     return " · ".join(pieces)
 
 
+def _format_paper_line(paper: dict[str, Any]) -> str:
+    paper_id = paper.get("id")
+    id_label = f"[{paper_id}]" if paper_id is not None else "[?]"
+    return f"{id_label} {_describe_paper(paper)}"
+
+
 def _print_section(title: str, papers: list[dict[str, Any]]) -> None:
     if not papers:
         typer.echo(f"{title}: none")
         return
     typer.echo(f"{title} ({len(papers)}):")
     for paper in papers:
-        paper_id = paper.get("id")
-        id_label = f"[{paper_id}]" if paper_id is not None else "[?]"
-        typer.echo(f"  {id_label} {_describe_paper(paper)}")
+        typer.echo(f"  {_format_paper_line(paper)}")
+
+
+def _display_queue_payload(
+    payload: dict[str, Any],
+    show_backlog: bool,
+    show_housekeeping: bool,
+) -> None:
+    next_paper = payload.get("next_paper")
+    if next_paper:
+        typer.echo("Next paper:")
+        typer.echo(f"  {_format_paper_line(next_paper)}")
+    _print_section("Upcoming queue", payload.get("queue_papers", []))
+    if show_backlog:
+        _print_section("Backlog", payload.get("backlog_papers", []))
+    if show_housekeeping:
+        _print_section("Housekeeping queue", payload.get("housekeeping_queue_papers", []))
+        _print_section("Archived", payload.get("archived_papers", []))
+        _print_section("Covered", payload.get("covered_papers", []))
+
+
+def _show_queue(ctx: typer.Context, show_backlog: bool = True, show_housekeeping: bool = False) -> None:
+    payload = asyncio.run(_fetch_ui_context(ctx))
+    _display_queue_payload(payload, show_backlog=show_backlog, show_housekeeping=show_housekeeping)
 
 
 @cli.callback(invoke_without_command=True)
@@ -153,7 +176,7 @@ def main(
     ctx.obj["base_url"] = _resolve_base_url(base_url, scheme, host, port)
     ctx.obj["session_file"] = session_file.expanduser()
     if ctx.invoked_subcommand is None:
-        typer.echo(ctx.get_help())
+        _show_queue(ctx)
 
 
 @cli.command()
@@ -193,20 +216,7 @@ def queue(
     show_backlog: bool = typer.Option(True, "--show-backlog/--hide-backlog", help="Include backlog papers."),
     show_housekeeping: bool = typer.Option(False, help="Show archived/covered papers."),
 ) -> None:
-    payload = asyncio.run(_fetch_ui_context(ctx))
-    next_paper = payload.get("next_paper")
-    if next_paper:
-        paper_id = next_paper.get("id")
-        id_label = f"[{paper_id}]" if paper_id is not None else "[?]"
-        typer.echo("Next paper:")
-        typer.echo(f"  {id_label} {_describe_paper(next_paper)}")
-    _print_section("Upcoming queue", payload.get("queue_papers", []))
-    if show_backlog:
-        _print_section("Backlog", payload.get("backlog_papers", []))
-    if show_housekeeping:
-        _print_section("Housekeeping queue", payload.get("housekeeping_queue_papers", []))
-        _print_section("Archived", payload.get("archived_papers", []))
-        _print_section("Covered", payload.get("covered_papers", []))
+    _show_queue(ctx, show_backlog=show_backlog, show_housekeeping=show_housekeeping)
 
 
 def _token_from_credentials(
@@ -218,8 +228,9 @@ def _token_from_credentials(
         raise
 
 
-async def _post_action(
+async def _perform_action_request(
     ctx: typer.Context,
+    method: str,
     path: str,
     data: dict[str, Any] | None = None,
     access_token: str | None = None,
@@ -228,17 +239,46 @@ async def _post_action(
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     async with httpx.AsyncClient(base_url=ctx.obj["base_url"], follow_redirects=True) as client:
-        response = await client.post(path, data=data or {}, headers=headers)
+        response = await client.request(method, path, data=data or {}, headers=headers)
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             _handle_http_error(exc)
 
 
+async def _post_action(
+    ctx: typer.Context,
+    path: str,
+    data: dict[str, Any] | None = None,
+    access_token: str | None = None,
+) -> None:
+    await _perform_action_request(ctx, "POST", path, data=data, access_token=access_token)
+
+
 def _require_password_for_username(username: str | None, password: str | None) -> str | None:
     if username and password is None:
         return typer.prompt("Password", hide_input=True)
     return password
+
+
+def _parse_priority_value(value: str) -> int | None:
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    if normalized.isdigit():
+        numeric = int(normalized)
+        if 1 <= numeric <= 4:
+            return numeric
+    return PRIORITY_LABEL_VALUES.get(normalized)
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"{value!r} is not a boolean value")
 
 
 @cli.command()
@@ -261,57 +301,148 @@ def register(
 @cli.command()
 def vote(
     ctx: typer.Context,
-    paper_id: int = typer.Option(..., help="Paper identifier."),
-    priority: int = typer.Option(..., help="Priority level 1-4."),
+    show: bool = typer.Option(False, "--show", help="List unvoted papers without casting new votes."),
     username: str | None = typer.Option(None, "-u", "--username", help="Reader username."),
     password: str | None = typer.Option(None, "-p", "--password", help="Reader password."),
 ) -> None:
     password = _require_password_for_username(username, password)
     access_token = _token_from_credentials(ctx, username, password)
-    asyncio.run(_post_action(ctx, f"/papers/{paper_id}/vote", data={"priority": priority}, access_token=access_token))
-    typer.secho("Vote submitted", fg="green")
+    payload = asyncio.run(_fetch_ui_context(ctx, access_token=access_token))
+    papers = payload.get("papers", [])
+    unvoted = [paper for paper in papers if paper.get("user_priority") is None]
+    if not unvoted:
+        typer.secho("No unvoted papers remaining", fg="green")
+        return
+    if show:
+        typer.echo("Papers awaiting your vote:")
+        for paper in unvoted:
+            typer.echo(f"  {_format_paper_line(paper)}")
+        return
+    for paper in unvoted:
+        paper_id = paper.get("id")
+        typer.echo(f"Voting for {_format_paper_line(paper)}")
+        while True:
+            response = (
+                typer.prompt(
+                    "Priority (1-4, Low/Medium/High/Critical; skip/quit to move on)",
+                    default="",
+                    show_default=False,
+                )
+                .strip()
+            )
+            if not response or response.lower() in {"skip", "s"}:
+                typer.echo("Skipping paper")
+                break
+            if response.lower() in {"quit", "q"}:
+                typer.secho("Stopped voting session", fg="yellow")
+                return
+            priority_value = _parse_priority_value(response)
+            if priority_value is None:
+                typer.secho("Enter 1-4 or priority label (Low, Medium, High, Critical)", fg="yellow")
+                continue
+            if paper_id is None:
+                typer.secho("Paper missing id; cannot vote", fg="red")
+                break
+            asyncio.run(
+                _post_action(
+                    ctx,
+                    f"/papers/{paper_id}/vote",
+                    data={"priority": priority_value},
+                    access_token=access_token,
+                )
+            )
+            typer.secho(f"Voted priority {priority_value}", fg="green")
+            break
 
 
-def _post_housekeeping(
-    ctx: typer.Context,
-    action_path: str,
-    paper_id: int,
-    panel: str | None,
-    access_token: str,
-    panel_required: bool,
-) -> None:
-    path = f"/papers/{paper_id}/{action_path}"
-    data = {"panel": panel} if panel_required and panel else None
-    asyncio.run(_post_action(ctx, path, data=data, access_token=access_token))
-    typer.secho(f"Action completed: {action_path} on paper {paper_id}", fg="green")
+MODIFY_ACTIONS_HELP = (
+    "Actions as key:value pairs (e.g., pri:High, archived:True).\n"
+    "Valid keys:\n"
+    "  pri/priority=<1-4|low|medium|high|critical> (leave value empty to clear the vote)\n"
+    "  archived/archive=<True|False>\n"
+    "  cover/covered=<True|False>\n"
+    "  ready=<True|False>\n"
+    "  assign=<True|False>\n"
+    "  delete=True"
+)
 
 
 @cli.command()
-def housekeeping(
+def modify(
     ctx: typer.Context,
-    action: str = typer.Option("status", help="Action to apply (status, assign, unassign, ready, not-ready, archive, cover, unarchive, delete)."),
-    paper_id: int | None = typer.Option(None, help="ID of the paper to act on."),
-    panel: str = typer.Option("refresh", help="Panel identifier for HTMX interactions."),
+    paper_id: int = typer.Argument(..., help="Paper id to modify."),
+    actions: list[str] = typer.Argument(..., help=MODIFY_ACTIONS_HELP),
     username: str | None = typer.Option(None, "-u", "--username", help="Reader username."),
     password: str | None = typer.Option(None, "-p", "--password", help="Reader password."),
 ) -> None:
-    normalized = action.lower()
-    if normalized == "status":
-        payload = asyncio.run(_fetch_ui_context(ctx))
-        _print_section("Archived", payload.get("archived_papers", []))
-        _print_section("Covered", payload.get("covered_papers", []))
-        return
-    if normalized not in HOUSEKEEPING_ACTION_MAP:
-        typer.secho("Unknown action", fg="red")
-        raise typer.Exit(code=1)
-    if paper_id is None:
-        typer.secho("paper-id is required for housekeeping actions", fg="red")
+    if not actions:
+        typer.secho("Provide at least one action", fg="red")
         raise typer.Exit(code=1)
     password = _require_password_for_username(username, password)
     access_token = _token_from_credentials(ctx, username, password)
-    action_path = HOUSEKEEPING_ACTION_MAP[normalized]
-    panel_needed = normalized in PANEL_REQUIRED_ACTIONS
-    _post_housekeeping(ctx, action_path, paper_id, panel, access_token, panel_needed)
+    for action in actions:
+        if ":" not in action:
+            typer.secho("Actions must be in key:value format", fg="red")
+            raise typer.Exit(code=1)
+        key, value = action.split(":", 1)
+        key = key.strip().lower()
+        raw_value = value.strip()
+        path: str | None = None
+        label: str | None = None
+        data: dict[str, Any] | None = None
+        method = "POST"
+        try:
+            if key in {"pri", "priority"}:
+                if raw_value == "":
+                    method = "DELETE"
+                    path = f"/papers/{paper_id}/vote"
+                    label = "priority cleared"
+                else:
+                    priority_value = _parse_priority_value(raw_value)
+                    if priority_value is None:
+                        typer.secho("Unknown priority label", fg="red")
+                        raise typer.Exit(code=1)
+                    path = f"/papers/{paper_id}/vote"
+                    data = {"priority": priority_value}
+                    label = f"priority {priority_value}"
+            elif not raw_value:
+                typer.secho("Provide a value for every action", fg="red")
+                raise typer.Exit(code=1)
+            elif key in {"archived", "archive"}:
+                bool_value = _parse_bool(raw_value)
+                path = f"/papers/{paper_id}/{'archive' if bool_value else 'unarchive'}"
+                label = "archived" if bool_value else "restored"
+            elif key in {"cover", "covered"}:
+                bool_value = _parse_bool(raw_value)
+                path = (
+                    f"/papers/{paper_id}/mark-covered" if bool_value else f"/papers/{paper_id}/unarchive"
+                )
+                label = "marked as covered" if bool_value else "restored"
+            elif key == "ready":
+                bool_value = _parse_bool(raw_value)
+                path = f"/papers/{paper_id}/{'mark-ready' if bool_value else 'mark-not-ready'}"
+                label = "ready" if bool_value else "not ready"
+            elif key == "assign":
+                bool_value = _parse_bool(raw_value)
+                path = f"/papers/{paper_id}/{'assign' if bool_value else 'unassign'}"
+                label = "assigned" if bool_value else "unassigned"
+            elif key == "delete":
+                bool_value = _parse_bool(raw_value)
+                if not bool_value:
+                    typer.echo("Ignoring delete=False")
+                    continue
+                path = f"/papers/{paper_id}/delete"
+                label = "deleted"
+            else:
+                typer.secho(f"Unknown action '{key}'", fg="red")
+                raise typer.Exit(code=1)
+        except ValueError as exc:
+            typer.secho(str(exc), fg="red")
+            raise typer.Exit(code=1)
+        if path is None:
+            continue
+        asyncio.run(_perform_action_request(ctx, method, path, data=data, access_token=access_token))
+        typer.secho(f"{label or 'Updated'} for paper {paper_id}", fg="green")
 
 
 if __name__ == "__main__":
