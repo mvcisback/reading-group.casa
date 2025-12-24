@@ -5,6 +5,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 import typer
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
@@ -40,8 +41,8 @@ PRIORITY_BUCKETS = [
 QUEUE_SIZE = 3
 ASSIGNED_READER_PRIORITY_BONUS = 0.5
 READY_TO_PRESENT_PRIORITY_BONUS = 1.0
-UI_PREFIX = "/ui"
-UI_ROOT = f"{UI_PREFIX}/"
+UI_PREFIX = ""
+UI_ROOT = "/"
 
 SECRET_KEY = os.environ.get("READING_GROUP_SECRET_KEY", "insecure_default_change_me")
 ALGORITHM = "HS256"
@@ -525,6 +526,22 @@ def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.htm
     return RedirectResponse(redirect_path, status_code=303)
 
 
+def _redirect_to_ui_json(request: Request, target: str = UI_ROOT) -> RedirectResponse:
+    params = dict(request.query_params)
+    params["format"] = "json"
+    return RedirectResponse(f"{target}?{urlencode(params, doseq=True)}", status_code=303)
+
+
+@app.get("/api/queue", summary="Redirect to UI queue JSON")
+def api_queue(request: Request):
+    return _redirect_to_ui_json(request)
+
+
+@app.get("/api/papers", summary="Redirect to UI papers JSON")
+def api_papers(request: Request):
+    return _redirect_to_ui_json(request)
+
+
 def _panel_template(panel: str | None = None) -> tuple[str, str]:
     if panel == "candidates":
         return "partials/candidates.html", f"{UI_PREFIX}/vote"
@@ -561,10 +578,6 @@ async def not_found_handler(request: Request, exc: Exception):
         status_code=404,
     )
 
-
-@app.get("/", response_class=RedirectResponse)
-def root_redirect() -> RedirectResponse:
-    return RedirectResponse(UI_ROOT, status_code=303)
 
 @app.get(f"{UI_PREFIX}/", response_class=HTMLResponse)
 def homepage(request: Request) -> Response:

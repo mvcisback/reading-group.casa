@@ -16,10 +16,7 @@ def test_home_renders_queue_and_management_links(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        redirect = client.get("/", follow_redirects=False)
-        assert redirect.status_code == 303
-        assert redirect.headers["location"] == "/ui/"
-        response = client.get("/ui/")
+        response = client.get("/")
 
     assert response.status_code == 200
 
@@ -29,7 +26,7 @@ def test_homepage_json_context(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        response = client.get("/ui/?format=json")
+        response = client.get("/?format=json")
 
     assert response.status_code == 200
     data = response.json()
@@ -49,7 +46,7 @@ def test_vote_page_json_context_required_login_and_authenticated(tmp_path: Path)
             data={"username": "reader", "password": "securepass"},
         )
         assert login_response.status_code == 200
-        response = client.get("/ui/vote", headers={"Accept": "application/json"})
+        response = client.get("/vote", headers={"Accept": "application/json"})
 
     assert response.status_code == 200
     data = response.json()
@@ -62,7 +59,7 @@ def test_vote_page_json_requires_login(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        response = client.get("/ui/vote", headers={"Accept": "application/json"})
+        response = client.get("/vote", headers={"Accept": "application/json"})
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Log in to manage papers"
@@ -85,7 +82,7 @@ def test_authenticated_user_can_prioritize_multiple_papers(tmp_path: Path) -> No
         second_priority = client.post("/papers/1/vote", data={"priority": 4})
         assert second_priority.status_code == 200
 
-        response = client.get("/ui/vote")
+        response = client.get("/vote")
 
     assert "Critical priority" in response.text
 
@@ -404,7 +401,7 @@ def test_nominate_page_available(tmp_path: Path) -> None:
             "/users/register",
             data={"username": "reader", "password": "securepass"},
         )
-        response = client.get("/ui/nominate")
+        response = client.get("/nominate")
 
     assert response.status_code == 200
     assert "Register a new paper" in response.text
@@ -415,10 +412,10 @@ def test_nominate_page_redirects_when_logged_out(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        response = client.get("/ui/nominate", follow_redirects=False)
+        response = client.get("/nominate", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/ui/login"
+    assert response.headers["location"] == "/login"
 
 
 def test_nominate_requires_login(tmp_path: Path) -> None:
@@ -437,10 +434,10 @@ def test_vote_page_redirects_when_logged_out(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        response = client.get("/ui/vote", follow_redirects=False)
+        response = client.get("/vote", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/ui/login"
+    assert response.headers["location"] == "/login"
 
 
 def test_vote_page_available_when_logged_in(tmp_path: Path) -> None:
@@ -452,7 +449,7 @@ def test_vote_page_available_when_logged_in(tmp_path: Path) -> None:
             "/users/register",
             data={"username": "reader", "password": "securepass"},
         )
-        response = client.get("/ui/vote")
+        response = client.get("/vote")
 
     assert response.status_code == 200
     assert "Assign each paper a priority to move it through the queue." in response.text
@@ -467,7 +464,7 @@ def test_housekeeping_page_available(tmp_path: Path) -> None:
             "/users/register",
             data={"username": "reader", "password": "securepass"},
         )
-        response = client.get("/ui/housekeeping")
+        response = client.get("/housekeeping")
 
     assert response.status_code == 200
     assert "Archive or delete papers" in response.text
@@ -483,7 +480,7 @@ def test_housekeeping_queue_includes_next_paper(tmp_path: Path) -> None:
             data={"username": "reader", "password": "securepass"},
         )
         client.post("/papers", data={"title": "Upcoming Paper"})
-        response = client.get("/ui/housekeeping")
+        response = client.get("/housekeeping")
 
     assert response.status_code == 200
     assert "Upcoming Paper" in response.text
@@ -495,10 +492,10 @@ def test_housekeeping_page_redirects_when_logged_out(tmp_path: Path) -> None:
     app.state.db_path = str(db_path)
 
     with TestClient(app) as client:
-        response = client.get("/ui/housekeeping", follow_redirects=False)
+        response = client.get("/housekeeping", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/ui/login"
+    assert response.headers["location"] == "/login"
 
 
 def test_missing_page_renders_custom_404(tmp_path: Path) -> None:
