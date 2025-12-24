@@ -1,3 +1,16 @@
+## 1.1.0 (2025-12-24)
+
+### Feat
+
+- **nix**: Expose cli via nix flake.
+- **api**: convert main to async
+- **cli**: Colorization/prettification + show subcommand
+- **cli**: Colorize outputs.
+- **cli**: expand modify helpers
+- **cli**: Sketch out basic cli interface.
+- **ui**: drop /ui prefix for ui endpoints.
+- **cli**: offer ui json responses
+
 ## 1.0.0 (2025-12-23)
 
 ### Feat
