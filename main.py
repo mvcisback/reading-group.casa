@@ -3,10 +3,12 @@ import hmac
 import os
 import secrets
 import sqlite3
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
+import aiosqlite
 import typer
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
@@ -231,18 +233,22 @@ async def get_current_user(
     if not actual_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
     token_data = _verify_token(actual_token, "access")
-    with _connect() as conn:
-        user = _get_user_by_username(conn, token_data.username)
+    async with _connect() as conn:
+        user = await _get_user_by_username(conn, token_data.username)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
     return user
 
 
-def _get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT id, username FROM users WHERE username = ?", (username,)).fetchone()
+async def _get_user_by_username(conn: aiosqlite.Connection, username: str) -> sqlite3.Row | None:
+    cursor = await conn.execute(
+        "SELECT id, username FROM users WHERE username = ?",
+        (username,),
+    )
+    return await cursor.fetchone()
 
 
-def _current_user(request: Request) -> sqlite3.Row | None:
+async def _current_user(request: Request) -> sqlite3.Row | None:
     token = _extract_token_from_request(request)
     if not token:
         return None
@@ -250,8 +256,8 @@ def _current_user(request: Request) -> sqlite3.Row | None:
         token_data = _verify_token(token, "access")
     except HTTPException:
         return None
-    with _connect() as conn:
-        return _get_user_by_username(conn, token_data.username)
+    async with _connect() as conn:
+        return await _get_user_by_username(conn, token_data.username)
 
 
 def _token_response_for_user(username: str) -> TokenResponse:
@@ -267,11 +273,15 @@ def _db_path() -> str:
     return os.environ.get("READING_GROUP_DB", "reading_group.db")
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path(), check_same_thread=False)
+@asynccontextmanager
+async def _connect():
+    conn = await aiosqlite.connect(_db_path(), check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    await conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 def _priority_label(score: float) -> str:
@@ -286,8 +296,8 @@ def _priority_label(score: float) -> str:
     return PRIORITY_LABELS[0]
 
 
-def _create_papers_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
+async def _create_papers_table(conn: aiosqlite.Connection) -> None:
+    await conn.execute(
         """
         CREATE TABLE papers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,31 +314,33 @@ def _create_papers_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _ensure_papers_table(conn: sqlite3.Connection) -> None:
+async def _ensure_papers_table(conn: aiosqlite.Connection) -> None:
     desired_columns = {"id", "title", "paper_url", "created_at", "archived", "covered", "assigned_reader_id", "ready_to_present"}
-    exists = conn.execute(
+    cursor = await conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='papers'"
-    ).fetchone()
+    )
+    exists = await cursor.fetchone()
     if not exists:
-        _create_papers_table(conn)
+        await _create_papers_table(conn)
         return
 
-    columns = [row["name"] for row in conn.execute("PRAGMA table_info(papers)")]
+    cursor = await conn.execute("PRAGMA table_info(papers)")
+    columns = [row["name"] for row in await cursor.fetchall()]
     if set(columns) != desired_columns:
-        conn.execute("DROP TABLE IF EXISTS papers_old")
-        conn.execute("ALTER TABLE papers RENAME TO papers_old")
-        _create_papers_table(conn)
-        conn.execute(
+        await conn.execute("DROP TABLE IF EXISTS papers_old")
+        await conn.execute("ALTER TABLE papers RENAME TO papers_old")
+        await _create_papers_table(conn)
+        await conn.execute(
             """
             INSERT INTO papers (id, title, paper_url, archived, covered, created_at, assigned_reader_id, ready_to_present)
             SELECT id, title, paper_url, archived, 0, created_at, assigned_reader_id, ready_to_present FROM papers_old
             """
         )
-        conn.execute("DROP TABLE papers_old")
+        await conn.execute("DROP TABLE papers_old")
 
 
-def _ensure_users_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
+async def _ensure_users_table(conn: aiosqlite.Connection) -> None:
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -340,8 +352,8 @@ def _ensure_users_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _create_votes_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
+async def _create_votes_table(conn: aiosqlite.Connection) -> None:
+    await conn.execute(
         """
         CREATE TABLE votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,44 +369,46 @@ def _create_votes_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _ensure_votes_table(conn: sqlite3.Connection) -> None:
+async def _ensure_votes_table(conn: aiosqlite.Connection) -> None:
     desired_columns = {"id", "user_id", "paper_id", "priority_level", "created_at"}
-    exists = conn.execute(
+    cursor = await conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='votes'"
-    ).fetchone()
+    )
+    exists = await cursor.fetchone()
     if not exists:
-        _create_votes_table(conn)
+        await _create_votes_table(conn)
         return
 
-    columns = [row["name"] for row in conn.execute("PRAGMA table_info(votes)")]
+    cursor = await conn.execute("PRAGMA table_info(votes)")
+    columns = [row["name"] for row in await cursor.fetchall()]
     if set(columns) != desired_columns:
-        conn.execute("DROP TABLE IF EXISTS votes_old")
-        conn.execute("ALTER TABLE votes RENAME TO votes_old")
-        _create_votes_table(conn)
-        conn.execute("DROP TABLE votes_old")
+        await conn.execute("DROP TABLE IF EXISTS votes_old")
+        await conn.execute("ALTER TABLE votes RENAME TO votes_old")
+        await _create_votes_table(conn)
+        await conn.execute("DROP TABLE votes_old")
 
 
-def _init_db() -> None:
-    with _connect() as conn:
-        _ensure_users_table(conn)
-        _ensure_papers_table(conn)
-        _ensure_votes_table(conn)
-        conn.commit()
+async def _init_db() -> None:
+    async with _connect() as conn:
+        await _ensure_users_table(conn)
+        await _ensure_papers_table(conn)
+        await _ensure_votes_table(conn)
+        await conn.commit()
 
 
-def _fetch_papers(user_id: int | None) -> list[dict]:
-    return _fetch_papers_by_archive(user_id, archived=0)
+async def _fetch_papers(user_id: int | None) -> list[dict]:
+    return await _fetch_papers_by_archive(user_id, archived=0)
 
 
-def _fetch_archived_papers(user_id: int | None) -> list[dict]:
-    return _fetch_papers_by_archive(user_id, archived=1)
+async def _fetch_archived_papers(user_id: int | None) -> list[dict]:
+    return await _fetch_papers_by_archive(user_id, archived=1)
 
 
-def _fetch_covered_papers(user_id: int | None) -> list[dict]:
-    return _fetch_papers_by_archive(user_id, archived=1, covered=1)
+async def _fetch_covered_papers(user_id: int | None) -> list[dict]:
+    return await _fetch_papers_by_archive(user_id, archived=1, covered=1)
 
 
-def _fetch_papers_by_archive(user_id: int | None, archived: int, covered: int | None = None) -> list[dict]:
+async def _fetch_papers_by_archive(user_id: int | None, archived: int, covered: int | None = None) -> list[dict]:
     priority_sort_score_expr = (
         "COALESCE(AVG(votes.priority_level), 0)"
         f" + CASE WHEN papers.assigned_reader_id IS NOT NULL THEN {ASSIGNED_READER_PRIORITY_BONUS} ELSE 0 END"
@@ -406,8 +420,8 @@ def _fetch_papers_by_archive(user_id: int | None, archived: int, covered: int | 
         filters.append("papers.covered = ?")
         params.append(covered)
     filter_clause = " AND ".join(filters)
-    with _connect() as conn:
-        cursor = conn.execute(
+    async with _connect() as conn:
+        cursor = await conn.execute(
             f"""
             SELECT
                 papers.*,
@@ -429,7 +443,7 @@ def _fetch_papers_by_archive(user_id: int | None, archived: int, covered: int | 
             """,
             (user_id, *params),
         )
-        rows = cursor.fetchall()
+        rows = await cursor.fetchall()
     return _decorate_papers(rows)
 
 
@@ -471,18 +485,18 @@ def _decorate_papers(rows: list[sqlite3.Row]) -> list[dict]:
     return decorated
 
 
-def _build_context(request: Request, user_row: sqlite3.Row | None = None) -> dict:
+async def _build_context(request: Request, user_row: sqlite3.Row | None = None) -> dict:
     if user_row is None:
-        user_row = _current_user(request)
+        user_row = await _current_user(request)
     user_id = user_row["id"] if user_row else None
     user = dict(user_row) if user_row else None
-    papers = _fetch_papers(user_id)
+    papers = await _fetch_papers(user_id)
     queue_candidates = papers[:QUEUE_SIZE + 1]
     next_paper = queue_candidates[0] if queue_candidates else None
     queue_papers = queue_candidates[1:] if queue_candidates else []
     backlog_papers = papers[QUEUE_SIZE + 1:]
-    archived_papers = _fetch_archived_papers(user_id)
-    covered_papers = _fetch_covered_papers(user_id)
+    archived_papers = await _fetch_archived_papers(user_id)
+    covered_papers = await _fetch_covered_papers(user_id)
     context = {
         "request": request,
         "papers": papers,
@@ -509,20 +523,21 @@ def _context_without_request(context: dict) -> dict:
     return {key: value for key, value in context.items() if key != "request"}
 
 
-def _render_template_or_json(
+async def _render_template_or_json(
     request: Request,
     template_name: str,
     user_row: sqlite3.Row | None = None,
 ) -> Response:
-    context = _build_context(request, user_row)
+    context = await _build_context(request, user_row)
     if _client_wants_json(request):
         return JSONResponse(_context_without_request(context))
     return templates.TemplateResponse(template_name, context)
 
 
-def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = UI_ROOT):
+async def _hx_or_redirect(request: Request, template_name: str = "partials/refresh.html", redirect_path: str = UI_ROOT):
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(template_name, _build_context(request))
+        context = await _build_context(request)
+        return templates.TemplateResponse(template_name, context)
     return RedirectResponse(redirect_path, status_code=303)
 
 
@@ -565,8 +580,8 @@ def _verify_password(password: str, password_hash: str) -> bool:
 
 
 @app.on_event("startup")
-def startup_event() -> None:
-    _init_db()
+async def startup_event() -> None:
+    await _init_db()
 
 
 @app.exception_handler(404)
@@ -580,52 +595,52 @@ async def not_found_handler(request: Request, exc: Exception):
 
 
 @app.get(f"{UI_PREFIX}/", response_class=HTMLResponse)
-def homepage(request: Request) -> Response:
-    return _render_template_or_json(request, "index.html")
+async def homepage(request: Request) -> Response:
+    return await _render_template_or_json(request, "index.html")
 
 
 @app.get(f"{UI_PREFIX}/login", response_class=HTMLResponse)
-def login_page(request: Request) -> Response:
-    return _render_template_or_json(request, "login.html")
+async def login_page(request: Request) -> Response:
+    return await _render_template_or_json(request, "login.html")
 
 
 @app.get(f"{UI_PREFIX}/vote", response_class=HTMLResponse)
-def vote_page(request: Request) -> Response:
-    user = _current_user(request)
+async def vote_page(request: Request) -> Response:
+    user = await _current_user(request)
     if not user:
         if _client_wants_json(request):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return _render_template_or_json(request, "vote.html", user_row=user)
+    return await _render_template_or_json(request, "vote.html", user_row=user)
 
 
 @app.get(f"{UI_PREFIX}/about", response_class=HTMLResponse)
-def about_page(request: Request) -> Response:
-    return _render_template_or_json(request, "about.html")
+async def about_page(request: Request) -> Response:
+    return await _render_template_or_json(request, "about.html")
 
 
 @app.get(f"{UI_PREFIX}/nominate", response_class=HTMLResponse)
-def nominate_page(request: Request) -> Response:
-    user = _current_user(request)
+async def nominate_page(request: Request) -> Response:
+    user = await _current_user(request)
     if not user:
         if _client_wants_json(request):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return _render_template_or_json(request, "nominate.html", user_row=user)
+    return await _render_template_or_json(request, "nominate.html", user_row=user)
 
 
 @app.get(f"{UI_PREFIX}/housekeeping", response_class=HTMLResponse)
-def housekeeping_page(request: Request) -> Response:
-    user = _current_user(request)
+async def housekeeping_page(request: Request) -> Response:
+    user = await _current_user(request)
     if not user:
         if _client_wants_json(request):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Log in to manage papers")
         return RedirectResponse(f"{UI_PREFIX}/login", status_code=303)
-    return _render_template_or_json(request, "housekeeping.html", user_row=user)
+    return await _render_template_or_json(request, "housekeeping.html", user_row=user)
 
 
 @app.post("/papers", summary="Nominate a paper")
-def register_paper(
+async def register_paper(
     request: Request,
     payload: PaperNominationForm = Depends(PaperNominationForm.as_form),
     _current_user: sqlite3.Row = Depends(get_current_user),
@@ -637,17 +652,17 @@ def register_paper(
     - **paper_url**: Optional reference link or DOI.
     """
 
-    with _connect() as conn:
-        conn.execute(
+    async with _connect() as conn:
+        await conn.execute(
             "INSERT INTO papers (title, paper_url) VALUES (?, ?)",
             (
                 payload.title,
                 payload.paper_url,
             ),
         )
-        conn.commit()
+        await conn.commit()
 
-    return _hx_or_redirect(
+    return await _hx_or_redirect(
         request,
         template_name="partials/nominate-panel.html",
         redirect_path=f"{UI_PREFIX}/nominate",
@@ -655,7 +670,7 @@ def register_paper(
 
 
 @app.post("/papers/{paper_id}/vote", summary="Set paper priority")
-def vote_on_paper(
+async def vote_on_paper(
     paper_id: int,
     request: Request,
     payload: PriorityVoteForm = Depends(PriorityVoteForm.as_form),
@@ -668,11 +683,12 @@ def vote_on_paper(
     """
     if payload.priority not in PRIORITY_LEVELS:
         raise HTTPException(status_code=400, detail="Select a valid priority")
-    with _connect() as conn:
-        paper = conn.execute("SELECT id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT id FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
-        conn.execute(
+        await conn.execute(
             """
             INSERT INTO votes (user_id, paper_id, priority_level)
             VALUES (?, ?, ?)
@@ -682,9 +698,9 @@ def vote_on_paper(
             """,
             (_current_user["id"], paper_id, payload.priority),
         )
-        conn.commit()
+        await conn.commit()
 
-    return _hx_or_redirect(
+    return await _hx_or_redirect(
         request,
         template_name="partials/candidates.html",
         redirect_path=f"{UI_PREFIX}/vote",
@@ -692,23 +708,23 @@ def vote_on_paper(
 
 
 @app.delete("/papers/{paper_id}/vote", summary="Clear a priority vote")
-def clear_priority_vote(
+async def clear_priority_vote(
     paper_id: int,
     _current_user: sqlite3.Row = Depends(get_current_user),
 ):
-    with _connect() as conn:
-        result = conn.execute(
+    async with _connect() as conn:
+        result = await conn.execute(
             "DELETE FROM votes WHERE paper_id = ? AND user_id = ?",
             (paper_id, _current_user["id"]),
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Vote not found")
-        conn.commit()
+        await conn.commit()
     return JSONResponse({"detail": "Vote removed"})
 
 
 @app.post("/papers/{paper_id}/assign", summary="Assign a reader")
-def assign_reader(
+async def assign_reader(
     paper_id: int,
     request: Request,
     panel: str = Form("refresh"),
@@ -718,23 +734,24 @@ def assign_reader(
     Assign the authenticated user as the reader for the requested paper.
     """
     template_name, redirect_path = _panel_template(panel)
-    with _connect() as conn:
-        paper = conn.execute("SELECT id, assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT id, assigned_reader_id FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
         if assigned_reader_id and assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=400, detail="Paper already has a reader assigned")
-        conn.execute(
+        await conn.execute(
             "UPDATE papers SET assigned_reader_id = ?, ready_to_present = 0 WHERE id = ?",
             (_current_user["id"], paper_id),
         )
-        conn.commit()
-    return _hx_or_redirect(request, template_name, redirect_path)
+        await conn.commit()
+    return await _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/unassign", summary="Unassign the reader")
-def unassign_reader(
+async def unassign_reader(
     paper_id: int,
     request: Request,
     panel: str = Form("refresh"),
@@ -744,8 +761,9 @@ def unassign_reader(
     Release the authenticated reader from the assigned paper.
     """
     template_name, redirect_path = _panel_template(panel)
-    with _connect() as conn:
-        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
@@ -753,16 +771,16 @@ def unassign_reader(
             raise HTTPException(status_code=400, detail="Paper has no assigned reader")
         if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can release this paper")
-        conn.execute(
+        await conn.execute(
             "UPDATE papers SET assigned_reader_id = NULL, ready_to_present = 0 WHERE id = ?",
             (paper_id,),
         )
-        conn.commit()
-    return _hx_or_redirect(request, template_name, redirect_path)
+        await conn.commit()
+    return await _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/mark-ready", summary="Mark paper ready")
-def mark_paper_ready(
+async def mark_paper_ready(
     paper_id: int,
     request: Request,
     panel: str = Form("refresh"),
@@ -772,23 +790,24 @@ def mark_paper_ready(
     Flag the assigned paper as ready to present.
     """
     template_name, redirect_path = _panel_template(panel)
-    with _connect() as conn:
-        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
         if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
-        conn.execute(
+        await conn.execute(
             "UPDATE papers SET ready_to_present = 1 WHERE id = ?",
             (paper_id,),
         )
-        conn.commit()
-    return _hx_or_redirect(request, template_name, redirect_path)
+        await conn.commit()
+    return await _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/mark-not-ready", summary="Mark paper not ready")
-def mark_paper_not_ready(
+async def mark_paper_not_ready(
     paper_id: int,
     request: Request,
     panel: str = Form("refresh"),
@@ -798,23 +817,24 @@ def mark_paper_not_ready(
     Mark the assigned paper as not ready to present.
     """
     template_name, redirect_path = _panel_template(panel)
-    with _connect() as conn:
-        paper = conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT assigned_reader_id FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         assigned_reader_id = paper["assigned_reader_id"]
         if assigned_reader_id != _current_user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned reader can update readiness")
-        conn.execute(
+        await conn.execute(
             "UPDATE papers SET ready_to_present = 0 WHERE id = ?",
             (paper_id,),
         )
-        conn.commit()
-    return _hx_or_redirect(request, template_name, redirect_path)
+        await conn.commit()
+    return await _hx_or_redirect(request, template_name, redirect_path)
 
 
 @app.post("/papers/{paper_id}/archive", summary="Archive a paper")
-def archive_paper(
+async def archive_paper(
     paper_id: int,
     request: Request,
     _current_user: sqlite3.Row = Depends(get_current_user),
@@ -822,15 +842,16 @@ def archive_paper(
     """
     Archive a paper and clear any ready-to-present flag.
     """
-    with _connect() as conn:
-        paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         if paper["archived"]:
             raise HTTPException(status_code=400, detail="Paper already archived")
-        conn.execute("UPDATE papers SET archived = 1, covered = 0 WHERE id = ?", (paper_id,))
-        conn.commit()
-    return _hx_or_redirect(
+        await conn.execute("UPDATE papers SET archived = 1, covered = 0 WHERE id = ?", (paper_id,))
+        await conn.commit()
+    return await _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
         redirect_path=f"{UI_PREFIX}/housekeeping",
@@ -838,7 +859,7 @@ def archive_paper(
 
 
 @app.post("/papers/{paper_id}/mark-covered", summary="Mark paper covered")
-def mark_paper_covered(
+async def mark_paper_covered(
     paper_id: int,
     request: Request,
     panel: str = Form("refresh"),
@@ -848,13 +869,14 @@ def mark_paper_covered(
     Mark and archive the paper as covered, removing any reader assignment.
     """
     template_name, redirect_path = _panel_template(panel)
-    with _connect() as conn:
-        paper = conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,)).fetchone()
+    async with _connect() as conn:
+        cursor = await conn.execute("SELECT id, archived FROM papers WHERE id = ?", (paper_id,))
+        paper = await cursor.fetchone()
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
         if paper["archived"]:
             raise HTTPException(status_code=400, detail="Paper already archived")
-        conn.execute(
+        await conn.execute(
             """
             UPDATE papers
             SET archived = 1,
@@ -865,8 +887,8 @@ def mark_paper_covered(
             """,
             (paper_id,),
         )
-        conn.commit()
-    return _hx_or_redirect(
+        await conn.commit()
+    return await _hx_or_redirect(
         request,
         template_name=template_name,
         redirect_path=redirect_path,
@@ -874,7 +896,7 @@ def mark_paper_covered(
 
 
 @app.post("/papers/{paper_id}/unarchive", summary="Restore a paper")
-def unarchive_paper(
+async def unarchive_paper(
     paper_id: int,
     request: Request,
     _current_user: sqlite3.Row = Depends(get_current_user),
@@ -882,15 +904,15 @@ def unarchive_paper(
     """
     Restore an archived paper to the active queue.
     """
-    with _connect() as conn:
-        result = conn.execute(
+    async with _connect() as conn:
+        result = await conn.execute(
             "UPDATE papers SET archived = 0, covered = 0 WHERE id = ? AND archived = 1",
             (paper_id,),
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
-        conn.commit()
-    return _hx_or_redirect(
+        await conn.commit()
+    return await _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
         redirect_path=f"{UI_PREFIX}/housekeeping",
@@ -898,7 +920,7 @@ def unarchive_paper(
 
 
 @app.post("/papers/{paper_id}/delete", summary="Delete a paper")
-def delete_paper(
+async def delete_paper(
     paper_id: int,
     request: Request,
     _current_user: sqlite3.Row = Depends(get_current_user),
@@ -906,12 +928,12 @@ def delete_paper(
     """
     Permanently remove the paper from the backlog.
     """
-    with _connect() as conn:
-        result = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
+    async with _connect() as conn:
+        result = await conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Paper not found")
-        conn.commit()
-    return _hx_or_redirect(
+        await conn.commit()
+    return await _hx_or_redirect(
         request,
         template_name="partials/housekeeping-panel.html",
         redirect_path=f"{UI_PREFIX}/housekeeping",
@@ -920,7 +942,7 @@ def delete_paper(
 
 @app.post("/users/register", summary="Create a new user")
 @limiter.limit("30/minute")
-def register_user(
+async def register_user(
     request: Request,
     credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
@@ -934,13 +956,13 @@ def register_user(
     if not normalized_username or not credentials.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
-    with _connect() as conn:
+    async with _connect() as conn:
         try:
-            conn.execute(
+            await conn.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                 (normalized_username, _hash_password(credentials.password)),
             )
-            conn.commit()
+            await conn.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=400, detail="Username already taken")
 
@@ -952,7 +974,7 @@ def register_user(
 
 @app.post("/users/login", summary="Log in a user")
 @limiter.limit("5/minute")
-def login_user(
+async def login_user(
     request: Request,
     credentials: CredentialsForm = Depends(CredentialsForm.as_form),
 ):
@@ -966,11 +988,12 @@ def login_user(
     if not normalized_username or not credentials.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
-    with _connect() as conn:
-        user = conn.execute(
+    async with _connect() as conn:
+        cursor = await conn.execute(
             "SELECT username, password_hash FROM users WHERE username = ?",
             (normalized_username,),
-        ).fetchone()
+        )
+        user = await cursor.fetchone()
     if not user or not _verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
@@ -982,15 +1005,16 @@ def login_user(
 
 @app.post("/token", response_model=TokenResponse, summary="Exchange credentials for tokens")
 @limiter.limit("10/minute")
-def exchange_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+async def exchange_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     username = form_data.username.strip()
     if not username or not form_data.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
-    with _connect() as conn:
-        user = conn.execute(
+    async with _connect() as conn:
+        cursor = await conn.execute(
             "SELECT username, password_hash FROM users WHERE username = ?",
             (username,),
-        ).fetchone()
+        )
+        user = await cursor.fetchone()
     if not user or not _verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Invalid username or password")
     return _token_response_for_user(user["username"])
@@ -998,10 +1022,10 @@ def exchange_token(request: Request, form_data: OAuth2PasswordRequestForm = Depe
 
 @app.post("/token/refresh", response_model=TokenResponse, summary="Refresh an access token")
 @limiter.limit("10/minute")
-def refresh_access_token(request: Request, payload: RefreshTokenForm):
+async def refresh_access_token(request: Request, payload: RefreshTokenForm):
     token_data = _verify_token(payload.refresh_token, "refresh")
-    with _connect() as conn:
-        user = _get_user_by_username(conn, token_data.username)
+    async with _connect() as conn:
+        user = await _get_user_by_username(conn, token_data.username)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     return _token_response_for_user(user["username"])
