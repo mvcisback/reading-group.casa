@@ -11,6 +11,7 @@ dependencies = [
     "python-multipart>=0.0.21",
     "slowapi>=0.1.9",
     "typer>=0.20.1",
+    "httpx>=0.28.1",
     "uvicorn>=0.23.0",
 ]
 
