@@ -121,40 +121,107 @@ def _style_priority_label(label: str) -> str:
 
 def _describe_paper(paper: dict[str, Any]) -> str:
     title = paper.get("title") or "Untitled paper"
-    pieces = [title.strip() or "Untitled paper"]
-    score = paper.get("priority_score_display") or "—"
-    votes = paper.get("priority_votes")
-    votes_text = f"{votes} votes" if votes is not None else "no votes"
-    priority_label = paper.get("priority_label", "Unranked")
-    pieces.append(f"{_style_priority_label(priority_label)} ({score}, {votes_text})")
+    return (title.strip() or "Untitled paper")
+
+
+SECTION_BORDER = "─" * 36
+SPARKLINE_LEVELS = "▁▂▃▄▅▆▇█"
+
+
+def _sparkline_for_paper(paper: dict[str, Any]) -> str:
+    counts = [paper.get(f"priority_count_{level}", 0) or 0 for level in range(1, 5)]
+    total = sum(counts)
+    if total == 0:
+        return "────"
+    max_index = len(SPARKLINE_LEVELS) - 1
+    bars = []
+    for count in counts:
+        ratio = count / total
+        index = min(max_index, round(ratio * max_index))
+        bars.append(SPARKLINE_LEVELS[index])
+    return "".join(bars)
+
+
+def _paper_status_tags(paper: dict[str, Any]) -> str:
+    tags = []
     assigned = paper.get("assigned_reader_username")
     if assigned:
-        pieces.append(typer.style(f"assigned to {assigned}", fg="magenta"))
+        tags.append(f"👤 {assigned}")
+    else:
+        tags.append("⚠️ unassigned")
     if paper.get("ready_to_present"):
-        pieces.append(typer.style("ready to present", fg="bright_green"))
-    url = paper.get("paper_url")
-    if url:
-        pieces.append(typer.style(url, fg="blue", underline=True))
-    return " · ".join(pieces)
+        tags.append("✅ ready")
+    return " | ".join(tags)
 
 
-def _format_paper_line(paper: dict[str, Any]) -> str:
+def _queue_metrics(papers: list[dict[str, Any]]) -> str:
+    if not papers:
+        return ""
+    total_votes = sum(paper.get("priority_votes") or 0 for paper in papers)
+    score_sum = sum((paper.get("priority_score") or 0) for paper in papers)
+    avg_score = score_sum / len(papers)
+    assigned = sum(1 for paper in papers if paper.get("assigned_reader_username"))
+    ready = sum(1 for paper in papers if paper.get("ready_to_present"))
+    return f"votes {total_votes} · avg {avg_score:.1f} · assigned {assigned} · ready {ready}"
+
+
+def _find_paper_by_id(payload: dict[str, Any], paper_id: int) -> dict[str, Any] | None:
+    for paper in payload.get("papers", []):
+        if paper.get("id") == paper_id:
+            return paper
+    return None
+
+
+def _format_histogram(paper: dict[str, Any]) -> str:
+    histogram = paper.get("priority_histogram") or []
+    segments = []
+    for bucket in histogram:
+        label = bucket.get("label", "?")
+        count = bucket.get("count", 0)
+        percent = bucket.get("percent", 0)
+        segments.append(f"{label[0]}:{count}({percent:.0f}%)")
+    return " ".join(segments)
+
+
+def _format_paper_line(paper: dict[str, Any], *, show_details: bool = False) -> str:
     paper_id = paper.get("id")
     id_label = f"[{paper_id}]" if paper_id is not None else "[?]"
-    return f"{id_label} {_describe_paper(paper)}"
+    title = _describe_paper(paper)
+    truncated_title = title if len(title) <= 34 else f"{title[:31]}..."
+    priority_label = paper.get("priority_label", "Unranked")
+    styled_priority = _style_priority_label(priority_label)
+    score = paper.get("priority_score_display") or "—"
+    votes = paper.get("priority_votes") or 0
+    sparkline = _sparkline_for_paper(paper)
+    status = _paper_status_tags(paper)
+    base = (
+        f"● {id_label:<5} {truncated_title:<34} {styled_priority:<12} "
+        f"{score:>4} {sparkline} {status}"
+    )
+    if show_details:
+        base += f" ({votes} votes)"
+        url = paper.get("paper_url")
+        if url:
+            base += f" → {typer.style(url, fg='blue', underline=True)}"
+    return base
 
 
 def _print_header(text: str, color: str = "bright_white") -> None:
-    typer.secho(text, fg=color, bold=True)
+    typer.secho(f"┌ {text} {SECTION_BORDER}", fg=color, bold=True)
+
+
+def _print_footer() -> None:
+    typer.secho(f"└{SECTION_BORDER}{SECTION_BORDER}", fg="bright_black")
 
 
 def _print_section(title: str, papers: list[dict[str, Any]]) -> None:
     if not papers:
         typer.secho(f"{title}: none", fg="bright_black")
         return
-    typer.secho(f"{title} ({len(papers)})", fg="cyan", bold=True)
+    _print_header(f"{title} ({len(papers)})", color="cyan")
     for paper in papers:
         typer.echo(f"  {_format_paper_line(paper)}")
+    _print_footer()
 
 
 def _display_queue_payload(
@@ -166,9 +233,15 @@ def _display_queue_payload(
     if next_paper:
         _print_header("Next paper:", color="bright_green")
         typer.echo(f"  {_format_paper_line(next_paper)}")
-    _print_section("Upcoming queue", payload.get("queue_papers", []))
+        _print_footer()
+    queue = payload.get("queue_papers", [])
+    metrics = _queue_metrics(queue)
+    if metrics:
+        typer.secho(f"╞ {metrics}", fg="bright_white", bold=True)
+    _print_section("Upcoming queue", queue)
     if show_backlog:
-        _print_section("Backlog", payload.get("backlog_papers", []))
+        backlog = payload.get("backlog_papers", [])
+        _print_section("Backlog", backlog)
     if show_housekeeping:
         _print_section("Housekeeping queue", payload.get("housekeeping_queue_papers", []))
         _print_section("Archived", payload.get("archived_papers", []))
@@ -335,6 +408,7 @@ def vote(
         _print_header("Papers awaiting your vote:", color="bright_magenta")
         for paper in unvoted:
             typer.echo(f"  {_format_paper_line(paper)}")
+        _print_footer()
         return
     for paper in unvoted:
         paper_id = paper.get("id")
@@ -371,6 +445,27 @@ def vote(
             )
             typer.secho(f"Voted priority {priority_value}", fg="green")
             break
+
+
+@cli.command()
+def show(
+    ctx: typer.Context,
+    paper_id: int = typer.Argument(..., help="Paper id to inspect."),
+) -> None:
+    payload = asyncio.run(_fetch_ui_context(ctx))
+    paper = _find_paper_by_id(payload, paper_id)
+    if paper is None:
+        typer.secho("Paper not found", fg="red")
+        raise typer.Exit(code=1)
+    _print_header(f"Paper {paper_id}", color="bright_magenta")
+    typer.echo(f"  {_format_paper_line(paper, show_details=True)}")
+    status = _paper_status_tags(paper)
+    if status:
+        typer.echo(f"  Status: {status}")
+    histogram = _format_histogram(paper)
+    if histogram:
+        typer.echo(f"  Histogram: {histogram}")
+    _print_footer()
 
 
 MODIFY_ACTIONS_HELP = (
