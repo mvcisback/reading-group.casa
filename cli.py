@@ -17,6 +17,13 @@ PRIORITY_LABEL_VALUES = {
     "high": 3,
     "critical": 4,
 }
+PRIORITY_COLOR_MAP = {
+    "Critical": "red",
+    "High": "yellow",
+    "Medium": "green",
+    "Low": "cyan",
+    "Unranked": "white",
+}
 
 def _resolve_base_url(base_url: str | None, scheme: str, host: str, port: int) -> str:
     if base_url:
@@ -106,21 +113,28 @@ async def _fetch_ui_context(ctx: typer.Context, access_token: str | None = None)
         return response.json()
 
 
+def _style_priority_label(label: str) -> str:
+    color = PRIORITY_COLOR_MAP.get(label, "white")
+    bold = color in {"red", "yellow"}
+    return typer.style(label, fg=color, bold=bold)
+
+
 def _describe_paper(paper: dict[str, Any]) -> str:
     title = paper.get("title") or "Untitled paper"
     pieces = [title.strip() or "Untitled paper"]
     score = paper.get("priority_score_display") or "—"
     votes = paper.get("priority_votes")
     votes_text = f"{votes} votes" if votes is not None else "no votes"
-    pieces.append(f"{paper.get('priority_label', 'Unranked')} ({score}, {votes_text})")
+    priority_label = paper.get("priority_label", "Unranked")
+    pieces.append(f"{_style_priority_label(priority_label)} ({score}, {votes_text})")
     assigned = paper.get("assigned_reader_username")
     if assigned:
-        pieces.append(f"assigned to {assigned}")
+        pieces.append(typer.style(f"assigned to {assigned}", fg="magenta"))
     if paper.get("ready_to_present"):
-        pieces.append("ready to present")
+        pieces.append(typer.style("ready to present", fg="bright_green"))
     url = paper.get("paper_url")
     if url:
-        pieces.append(url)
+        pieces.append(typer.style(url, fg="blue", underline=True))
     return " · ".join(pieces)
 
 
@@ -130,11 +144,15 @@ def _format_paper_line(paper: dict[str, Any]) -> str:
     return f"{id_label} {_describe_paper(paper)}"
 
 
+def _print_header(text: str, color: str = "bright_white") -> None:
+    typer.secho(text, fg=color, bold=True)
+
+
 def _print_section(title: str, papers: list[dict[str, Any]]) -> None:
     if not papers:
-        typer.echo(f"{title}: none")
+        typer.secho(f"{title}: none", fg="bright_black")
         return
-    typer.echo(f"{title} ({len(papers)}):")
+    typer.secho(f"{title} ({len(papers)})", fg="cyan", bold=True)
     for paper in papers:
         typer.echo(f"  {_format_paper_line(paper)}")
 
@@ -146,7 +164,7 @@ def _display_queue_payload(
 ) -> None:
     next_paper = payload.get("next_paper")
     if next_paper:
-        typer.echo("Next paper:")
+        _print_header("Next paper:", color="bright_green")
         typer.echo(f"  {_format_paper_line(next_paper)}")
     _print_section("Upcoming queue", payload.get("queue_papers", []))
     if show_backlog:
@@ -314,7 +332,7 @@ def vote(
         typer.secho("No unvoted papers remaining", fg="green")
         return
     if show:
-        typer.echo("Papers awaiting your vote:")
+        _print_header("Papers awaiting your vote:", color="bright_magenta")
         for paper in unvoted:
             typer.echo(f"  {_format_paper_line(paper)}")
         return
