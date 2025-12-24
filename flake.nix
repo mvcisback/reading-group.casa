@@ -51,6 +51,19 @@
           export PYTHONPATH=${workspaceRoot}
           exec ${venv}/bin/python main.py "$@"
         '';
+        cli = pkgs.writeShellScriptBin "reading-group-cli" ''
+          cd ${workspaceRoot}
+          export PYTHONPATH=${workspaceRoot}
+          exec ${venv}/bin/python cli.py "$@"
+        '';
+        serverApp = {
+          type = "app";
+          program = "${server}/bin/reading-group-server";
+        };
+        cliApp = {
+          type = "app";
+          program = "${cli}/bin/reading-group-cli";
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -64,9 +77,10 @@
             export PYTHONPATH=${workspaceRoot}
           '';
         };
-        apps.default = {
-          type = "app";
-          program = "${server}/bin/reading-group-server";
+        apps = {
+          default = serverApp;
+          server = serverApp;
+          cli = cliApp;
         };
       });
 }

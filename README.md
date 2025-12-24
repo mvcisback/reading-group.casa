@@ -25,7 +25,7 @@ Alternatively, run `python main.py` (or `python main.py --db-path /tmp/reading_g
 ```bash
 nix run
 ```
-This invokes the Typer CLI defined in `main.py` via the uv2nix-managed virtualenv. Pass CLI arguments after `--` (e.g., `nix run -- --db-path /tmp/reading_group.db`) when you need to override the database location or networking options.
+The default app (alias `server`) boots `main.py` inside the uv2nix-managed virtualenv, so `nix run` and `nix run .#server` both start the HTTP service configured for local experimentation. Use `nix run .#cli` to run the helper CLI in `cli.py` and pass extra arguments after `--` (e.g., `nix run -- --db-path /tmp/reading_group.db`).
 
 ## Database
 Data lives in `reading_group.db` (SQLite) in the project root. The schema is created automatically on first launch and there are no migrations yet.
