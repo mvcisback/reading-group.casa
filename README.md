@@ -3,6 +3,7 @@
 Reading Group is a lightweight FastAPI + htmx application for nominating, voting on, and selecting papers with your study group.
 
 An example video is linked below:
+
 [![Demo Video](https://img.youtube.com/vi/V4SoJ31IgZY/hqdefault.jpg)](https://youtu.be/V4SoJ31IgZY)
 
 ## Release 1.0 highlights
