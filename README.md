@@ -27,6 +27,30 @@ nix run
 ```
 The default app (alias `server`) boots `main.py` inside the uv2nix-managed virtualenv, so `nix run` and `nix run .#server` both start the HTTP service configured for local experimentation. Use `nix run .#cli` to run the helper CLI in `cli.py` and pass extra arguments after `--` (e.g., `nix run -- --db-path /tmp/reading_group.db`).
 
+## Container image (nix2container)
+
+The `readingGroupServerImage` package builds an image that copies the repository into `/app`, exposes port 8000, and keeps the SQLite database at `/data/reading_group.db`.
+
+```bash
+nix build .#readingGroupServerImage
+```
+
+This produces a locked `result` symlink. Load it into Docker:
+
+```bash
+nix run .#readingGroupServerImage.copyToDockerDaemon
+docker run --rm -p 8000:8000 -v "$(pwd)/data:/data" reading-group-server:latest
+```
+
+For Podman:
+
+```bash
+nix run .#readingGroupServerImage.copyToPodman
+podman run --rm -p 8000:8000 -v "$PWD/data:/data" reading-group-server:latest
+```
+
+Create a `data` directory before running the container so the database persists outside the image. Pass `-e READING_GROUP_SECRET_KEY=...` or set `READING_GROUP_SECURE_COOKIE`/`READING_GROUP_ENFORCE_HTTPS` when you need custom secrets or HTTPS enforcement.
+
 ## Database
 Data lives in `reading_group.db` (SQLite) in the project root. The schema is created automatically on first launch and there are no migrations yet.
 

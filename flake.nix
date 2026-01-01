@@ -13,6 +13,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.pyproject-nix.follows = "pyproject-nix";
     };
+    nix2container = {
+      url = "github:nlewo/nix2container";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     pyproject-build-systems = {
       url = "github:pyproject-nix/build-system-pkgs";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -64,6 +68,39 @@
           type = "app";
           program = "${cli}/bin/reading-group-cli";
         };
+        nix2containerPkgs = inputs.nix2container.packages.${system};
+        appSource = pkgs.runCommand "reading-group-app-source" {} ''
+          mkdir -p $out/app
+          cp -R ${workspaceRoot}/. $out/app
+          rm -rf $out/app/.git
+          mkdir -p $out/data
+        '';
+        containerImage = nix2containerPkgs.nix2container.buildImage {
+          name = "reading-group-server";
+          tag = "latest";
+          config = {
+            workingDir = "/app";
+            env = [
+              "PYTHONPATH=/app"
+              "READING_GROUP_DB=/data/reading_group.db"
+            ];
+            cmd = [
+              "${venv}/bin/python"
+              "main.py"
+              "--host"
+              "0.0.0.0"
+              "--port"
+              "8000"
+              "--db-path"
+              "/data/reading_group.db"
+              "--no-reload"
+            ];
+            exposedPorts = {
+              "8000/tcp" = {};
+            };
+          };
+          copyToRoot = appSource;
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -76,6 +113,9 @@
           shellHook = ''
             export PYTHONPATH=${workspaceRoot}
           '';
+        };
+        packages = {
+          readingGroupServerImage = containerImage;
         };
         apps = {
           default = serverApp;
